@@ -5,6 +5,7 @@ import { uid, ago, when, clip, DAY, HOUR } from './util.ts';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { zivHome } from './connectors/git.ts';
+import { semanticSearch, embedPending } from './semantic.ts';
 
 /**
  * Graph tools — the agent's hands. The LLM agent, the offline planner and the
@@ -104,6 +105,22 @@ export const tools: Tool[] = [
       return {
         text: rows.length ? rows.map((r) => `- ${r.label} **${r.name}** (\`${r.uid}\`)`).join('\n') : `Nothing in the graph matches "${query}".`,
         data: rows,
+      };
+    },
+  },
+
+  {
+    name: 'semantic_search',
+    description: 'Search by meaning, not keywords (FalkorDB vector index), then follow the graph from each hit to the people, systems, customers and tickets it is about. Use for fuzzy questions like "anything about slow invoices?" or "what has the team said about the cutover?".',
+    params: { type: 'object', properties: { query: { type: 'string' }, labels: { type: 'array', items: { type: 'string' }, description: 'optional: Doc Email ChatMessage Ticket Decision Fact Procedure Episode Thread' } }, required: ['query'] },
+    async run({ g }, { query, labels }) {
+      const { hits, themes } = await semanticSearch(g, query, { labels, k: 6 });
+      if (!hits.length) return { text: `Nothing in memory is close to "${query}" yet.` };
+      const line = (h: any) => `- ${h.label} **${clip(h.name, 70)}**${h.text && h.text !== h.name ? ` — ${clip(String(h.text).replace(/\s+/g, ' '), 110)}` : ''}${h.about.length ? `\n  ↳ ${h.about.slice(0, 4).map((a: any) => `${a.name} (${a.rel.toLowerCase().replace(/_/g, ' ')})`).join(', ')}` : ''}`;
+      return {
+        text: `Closest by meaning:\n${hits.map(line).join('\n')}${themes.length ? `\n\nThese keep coming back: ${themes.map((t) => `**${t.name}**`).join(', ')}.` : ''}`,
+        cards: [{ type: 'graph', title: `About “${clip(query, 30)}”`, focus: [...hits.map((h) => h.uid), ...themes.map((t) => t.uid)].slice(0, 14) }],
+        data: { hits, themes },
       };
     },
   },
@@ -618,6 +635,7 @@ export const tools: Tool[] = [
           await g.q(`MATCH (p:Procedure {uid:$p}), (a:Agent {uid:$a}) MERGE (p)-[r:PREFERS]->(a) SET r.weight = $w`, { p: u, a: a.uid, w: weight }, 'procedure → agent preference');
         }
       }
+      await embedPending(g, 20).catch(() => {});
       return { text: `Saved as a ${k}${about.length ? `, linked to ${about.length} thing${about.length > 1 ? 's' : ''} in your graph` : ''}. Every dot will use it.`, data: { uid: u, about } };
     },
   },
@@ -627,7 +645,7 @@ export const tools: Tool[] = [
     description: 'Search long-term memory: facts, procedures and past conversation episodes related to a topic.',
     params: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] },
     async run({ g }, { query }) {
-      const hits = await search(g, query, ['Fact', 'Procedure', 'Episode'], 8);
+      const hits = [...(await search(g, query, ['Fact', 'Procedure', 'Episode'], 6)), ...(await semanticSearch(g, query, { labels: ['Fact', 'Procedure', 'Episode', 'Decision'], k: 5 })).hits];
       const ent = await resolve(g, query);
       const linked = ent ? await g.q(`MATCH (m)-[:ABOUT]->({uid:$u}) WHERE (m:Fact OR m:Procedure) AND m.status = 'active' RETURN m.uid AS uid, m.text AS text, labels(m)[0] AS label`, { u: ent.uid }, `memories about ${ent.name}`) : [];
       const rows = await g.q(`MATCH (m) WHERE m.uid IN $ids RETURN m.uid AS uid, coalesce(m.text, m.name) AS text, [l IN labels(m) WHERE l <> 'Searchable'][0] AS label, m.at AS at`, { ids: [...new Set([...hits.map((h) => h.uid), ...linked.map((l) => l.uid)])] }, 'load memories');

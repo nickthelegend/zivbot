@@ -2,6 +2,7 @@ import { userGraph, type UserGraph } from '../graph.ts';
 import { upsertNodes, link } from '../ingest.ts';
 import { publish } from '../bus.ts';
 import { enrich } from '../analytics.ts';
+import { embedPending } from '../semantic.ts';
 import { syncFleet, seedRunHistory, AGENT_SPECS } from '../fleet.ts';
 import { connectorConfig, saveConnectorConfig, configuredFields } from '../secrets.ts';
 import { draftNode, search, type Tool } from '../tools.ts';
@@ -128,6 +129,8 @@ export async function connect(userId: string, id: string, values: Record<string,
     await registerActions(g, def);
     progress('Finding the connections…');
     await enrich(g);
+    progress('Building semantic memory…');
+    await embedPending(g, 2000).catch((e) => console.warn('[embed]', e.message));
     await g.q(`MATCH (c:Connector {uid:$u}) SET c.status = 'connected', c.mode = $mode, c.lastSync = $now, c.counts = $counts, c.error = ''`, { u: cuid, mode: def.auth === 'demo' ? 'demo' : 'live', now: Date.now(), counts: JSON.stringify(counts) }, 'connector connected');
     publish(userId, { type: 'connector', id, status: 'connected', counts });
     return { ok: true, counts };

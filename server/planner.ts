@@ -207,6 +207,11 @@ export async function plan(ctx: Ctx, input: string, opts: PlanOpts = {}): Promis
     return done(r.text);
   }
 
+  // fuzzy, "anything about…" questions go to semantic memory + graph expansion
+  if (/^(anything|has anyone|did anyone|what('s| is| has) (the team|everyone|anyone) (said|saying)|any (mention|talk|news))|\b(similar to|related to|reminds)\b/.test(low) || (!ents.length && t.split(/\s+/).length > 3)) {
+    return done((await call('semantic_search', { query: t })).text);
+  }
+
   // "tell me about X", "who is X", or a bare entity name
   const x = ents[0];
   if (x) return done((await call('describe_entity', { ref: x.uid })).text);

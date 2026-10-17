@@ -3,6 +3,7 @@ import { upsertNodes, link, linkAny, loadDictionary, mentionsIn } from './ingest
 import { publish } from './bus.ts';
 import { uid } from './util.ts';
 import type { Card } from './tools.ts';
+import { scheduleEmbed } from './semantic.ts';
 
 /**
  * Agent memory, all in the user's graph:
@@ -152,6 +153,7 @@ async function appendMessage(userId: string, g: UserGraph, m: Omit<Message, 'uid
   }
   if (msg.role !== 'user') await g.q(`MATCH (c:Conversation {uid:$c}) SET c.unread = coalesce(c.unread, 0) + 1`, { c: msg.conv });
   publish(userId, { type: 'message', message: msg });
+  if (msg.role !== 'system') scheduleEmbed(g);
   return msg;
 }
 

@@ -101,3 +101,16 @@ test('run_cypher refuses writes', async () => {
   assert.match(r.text, /read-only/);
   assert.ok((await g.q(`MATCH (n:Person) RETURN count(n) AS n`))[0].n > 0);
 });
+
+test('semantic memory: vector search finds meaning, then the graph says what it is about', async () => {
+  const { embedPending } = await import('../server/semantic.ts');
+  const n = await embedPending(g, 2000);
+  assert.ok(n > 30, `embedded ${n} nodes`);
+  const r = await run('semantic_search', { query: 'the customer portal invoice page is really slow to load' });
+  const d = r.data as any;
+  assert.ok(d.hits.length > 0);
+  const aboutAll = d.hits.flatMap((h: any) => h.about.map((a: any) => a.name));
+  assert.ok(aboutAll.some((x: string) => /LUM-142|LUM-139|Brightwave|checkout-web|payments-api/.test(x)), aboutAll.join(', '));
+  const idx = await g.q(`CALL db.indexes() YIELD label, types RETURN label, types`);
+  assert.ok(idx.some((i: any) => i.label === 'Memorable'));
+});
