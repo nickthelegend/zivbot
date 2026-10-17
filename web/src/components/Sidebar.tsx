@@ -30,7 +30,7 @@ export function Sidebar() {
         <div className="brand">
           <img src="/brand/icon-64.png" width={26} height={26} alt="" />
           <span className="brand-name">ZivBot</span>
-          {graph && <button className="graph-pulse" title={`FalkorDB · ${graph.graph}`} onClick={() => set({ view: 'graph', mobileList: false })}><i />{graph.nodes.toLocaleString()} nodes</button>}
+          {graph && <button className="graph-pulse" title={`Your FalkorDB graph · ${graph.nodes} nodes · ${graph.edges} edges`} onClick={() => set({ view: 'graph', mobileList: false })}><i />{graph.nodes >= 1000 ? `${(graph.nodes / 1000).toFixed(1)}k` : graph.nodes}</button>}
         </div>
         <div className="side-actions">
           <button className="icon-btn round" onClick={() => setSearching(!searching)} title="Search"><Icon.search size={17} /></button>

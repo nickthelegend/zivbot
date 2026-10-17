@@ -13,6 +13,8 @@
 | Show path: the Cypher behind every answer | A real Codex run, picked by graph routing |
 |---|---|
 | <img src="docs/screenshots/trace.png" alt="Trace drawer"> | <img src="docs/screenshots/forge-run.png" alt="Forge running Codex"> |
+| **Insights: bus factor, single points of failure, who's waiting** | **@-mention dots and plugins** |
+| <img src="docs/screenshots/insights.png" alt="Insights"> | <img src="docs/screenshots/mentions.png" alt="Mentions"> |
 | **Your graph + Cypher console** | **Connect Apps: 28 connectors and your AI subscriptions** |
 | <img src="docs/screenshots/graph.png" alt="Graph explorer"> | <img src="docs/screenshots/connect.png" alt="Connect Apps"> |
 
@@ -29,6 +31,8 @@ The questions a chief of staff gets are never about one record:
 | *What breaks if billing-db goes down?* | `(:System)-[:DEPENDS_ON*1..4]->(billing-db)`, then customers, projects and open tickets on that radius |
 | *Why did we move to Stripe?* | Decision → DECIDED_BY / APPROVED_BY → Person; Decision → SOURCE → Slack message + Notion RFC |
 | *Which agent should fix this?* | Agent ← EXECUTED_BY ← Run → WORKED_ON → System (and its neighbours), quota state, Procedure → PREFERS → Agent |
+| *Anything about the portal being slow?* | vector search over `:Memorable(emb)` → one hop to the tickets, people and customers each hit is about |
+| *What's risky?* | `algo.betweenness` over DEPENDS_ON, `DEPENDS_ON*1..5` dependents + customer ARR, knowledge share per critical system |
 
 The graph does real work in ZivBot (hackathon rule 3). Everything lives in FalkorDB and nowhere else:
 
@@ -44,8 +48,8 @@ Take FalkorDB away and nothing works.
 
 ## What it does
 
-1. **Onboarding like GrokBot.** Ziv asks your name, you name it, and you connect a workspace.
-2. **Connect everything.** Choose from 28 connectors in a GrokBot-style *Connect Apps* catalog. They fall into four groups:
+1. **Onboarding.** Ziv asks your name, you name it, and you connect a workspace.
+2. **Connect everything.** Choose from 28 connectors in the *Connect Apps* catalog. They fall into four groups:
    - **No key:** public GitHub, local git repos, RSS, Hacker News, iCal feeds, local docs, Web/Wikipedia, any MCP server.
    - **Your AI subscriptions:** Codex, Claude Code, Cursor, OpenCode, Grok and Antigravity, detected on your computer.
    - **API key:** Gmail + Calendar, Slack, Notion, Linear, GitHub (private), Jira, Sentry, Stripe, HubSpot, Vercel, Firecrawl, Telegram, Discord. See [`TODO-KEYS.md`](TODO-KEYS.md).
@@ -57,10 +61,22 @@ Take FalkorDB away and nothing works.
    - A graph query scores your installed agents.
    - You approve, and the agent runs headlessly on a branch. The tests run, and the result is written back as `(:Run)-[:RESOLVES]->(:Ticket)`.
    - If an agent hits its quota, the run is handed to the next-best agent.
-5. **Dots talk to each other.** "Messaged Forge" and "2 messages with Ziv" chips open the dot-to-dot exchange. Group chats route to the dots whose roles fit. All dots share one graph memory.
-6. **Show the path.** Under every answer, **Show path** opens the exact Cypher run (with timings, row counts and the dot that ran it) and the subgraph the answer used.
-7. **Works while you're away.** A background loop re-runs triage and only speaks up when what needs you changes. Finished runs report back with test results.
-8. **Remember.** Say "remember that I prefer Codex for backend fixes": it becomes a `:Procedure` that `PREFERS` Codex, and the router weighs it on every routing decision.
+5. **@-mention anything.** `@Forge fix LUM-142` hands the job to Forge. `@Hacker News FalkorDB` runs that plugin's tool. Mentions become `MENTIONS` edges in the graph.
+6. **Semantic memory (GraphRAG).** Every message, mail, doc, ticket and decision gets a vector in **one FalkorDB vector index**. Fuzzy questions run a vector search, then follow the graph from each hit to what it's about.
+7. **Insights.** One tab shows:
+   - knowledge risk (bus factor on critical systems)
+   - single points of failure (`algo.betweenness` over `DEPENDS_ON` plus the ARR riding on them)
+   - who's waiting on you
+   - who's overloaded
+   - working groups (label propagation)
+   - what changed in 24 hours (every node carries `firstSeen`/`lastSeen`)
+
+   The background loop watches these too.
+8. **Decision stakes.** "Help me decide" lays out the decision's source trail and everything it touches before you choose. Then the dot records the choice and drafts the follow-ups.
+9. **Dots talk to each other.** "Messaged Forge" and "2 messages with Ziv" chips open the dot-to-dot exchange. Group chats route to the dots whose roles fit. All dots share one graph memory.
+10. **Show the path.** Under every answer, **Show path** opens the exact Cypher run (with timings, row counts and the dot that ran it) and the subgraph the answer used.
+11. **Works while you're away.** A background loop re-runs triage and only speaks up when what needs you changes. Finished runs report back with test results.
+12. **Remember.** Say "remember that I prefer Codex for backend fixes": it becomes a `:Procedure` that `PREFERS` Codex, and the router weighs it on every routing decision.
 
 ## Architecture
 
@@ -216,6 +232,43 @@ CALL algo.betweenness({nodeLabels:['Person'], relationshipTypes:['COLLABORATES']
 CALL algo.pageRank('System', 'DEPENDS_ON') YIELD node, score SET node.criticality = score
 ```
 
+**Semantic memory: vector search, then graph expansion:**
+```cypher
+CREATE VECTOR INDEX FOR (n:Memorable) ON (n.emb) OPTIONS {dimension: 384, similarityFunction: 'cosine'}
+CALL db.idx.vector.queryNodes('Memorable', 'emb', $k, vecf32($v)) YIELD node, score
+UNWIND $uids AS u MATCH (n {uid: u})-[r]-(m) WHERE m:Person OR m:System OR m:Org OR m:Ticket OR m:Decision
+RETURN u, type(r), m.name
+```
+
+**Single points of failure:**
+```cypher
+CALL algo.betweenness({nodeLabels: ['System'], relationshipTypes: ['DEPENDS_ON']}) YIELD node, score
+MATCH (s:System) OPTIONAL MATCH (d:System)-[:DEPENDS_ON*1..5]->(s)
+WITH s, collect(DISTINCT d) AS deps UNWIND [s] + deps AS x
+OPTIONAL MATCH (o:Org {kind:'customer'})-[:USES]->(x)
+RETURN s.name, size(deps) AS dependents, collect(DISTINCT o.name) AS customers
+```
+
+**Knowledge risk (bus factor):**
+```cypher
+MATCH (s:System) WHERE s.tier IN ['critical','high']
+OPTIONAL MATCH (a:Person)<-[:AUTHORED_BY]-(:Commit)-[:TOUCHES]->(:File)-[:IN_REPO]->(:Repo)-[:IMPLEMENTS]->(s)
+WITH s, collect(a.uid) AS commits
+OPTIONAL MATCH (s)<-[:ABOUT]-(:Doc)<-[:OWNS]-(b:Person)
+WITH s, commits, collect(b.uid) AS docs
+OPTIONAL MATCH (s)<-[:AFFECTS]-(:Ticket)-[:ASSIGNED_TO]->(c:Person)
+RETURN s.name, commits, docs, collect(c.uid) AS tickets
+```
+
+**Decision stakes:**
+```cypher
+MATCH (d:Decision {uid:$u})-[:ABOUT]->(x)
+OPTIONAL MATCH (x)<-[:BLOCKED_BY]-(blocked:Project)
+OPTIONAL MATCH (x)-[:USES|AFFECTS|PART_OF*1..2]-(s:System)
+OPTIONAL MATCH (s)<-[:DEPENDS_ON*0..3]-(:System)<-[:USES]-(o:Org {kind:'customer'})
+RETURN collect(DISTINCT blocked.name), collect(DISTINCT s.name), collect(DISTINCT o.name)
+```
+
 **Full-text search across every label:**
 ```cypher
 CALL db.idx.fulltext.queryNodes('Searchable', $q) YIELD node, score
@@ -336,7 +389,7 @@ demo/              lumen-payments: the synthetic repo the coding agents fix
 
 ## Built with AI assistance (rule 11)
 
-ZivBot was built during the hackathon with **Claude Code** (Anthropic) as a coding assistant, plus a background sub-agent that wrote the API-key connector adapters. The product direction, the graph model decisions, testing against real coding agents and the review are the team's. The coding-agent runner and quota detection are adapted from the author's own open-source project [Loom](https://github.com/nickthelegend/loom).
+ZivBot was built during the hackathon with **Claude Code** (Anthropic) as a coding assistant, plus a background sub-agent that wrote the API-key connector adapters. The logo, character art and hero image were generated with ChatGPT image generation and cut out locally (originals in `brand/`). The product direction, the graph model decisions, testing against real coding agents and the review are the team's. The coding-agent runner and quota detection are adapted from the author's own open-source project [Loom](https://github.com/nickthelegend/loom).
 
 ## License
 
