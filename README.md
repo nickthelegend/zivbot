@@ -90,6 +90,8 @@ Take FalkorDB away and nothing works.
 21. **Works while you're away.** A background loop re-runs triage and only speaks up when what needs you changes. Finished runs report back with test results.
 22. **Remember.** Say "remember that I prefer Codex for backend fixes": it becomes a `:Procedure` that `PREFERS` Codex, and the router weighs it on every routing decision.
 23. **What if someone is out?** Ask "what if Hana is out next week?" and Ziv takes her out of the graph. It reports the systems nobody else knows, the systems left with one knower, her open tickets with the best new owner for each, the decisions that lose their context, the customers who lose a contact, her meetings this week, and who covers best. Then it offers to start the handoff. The **Insights** tab runs the same simulation for everyone and ranks **who we can't lose**. Click a person in the graph explorer for the same question.
+24. **What's blocking it?** Ask "what's blocking the EU launch?" and Ziv walks `BLOCKED_BY` upstream (EU Launch → Helios OTA 2.4). It collects the open tickets and pending decisions on every project in the chain, plus the P1/P2 incidents on the systems they ship on, reached through `DEPENDS_ON`. Then it ranks the root blockers by how much of the chain each one gates. Here the answer is a decision waiting on *you*: decision → LUM-131 → OTA 2.4 → EU Launch. One click opens "help me decide", and the explorer has the same question on every project.
+25. **Customer health.** "Which customers are at risk?" scores every customer from what the graph knows about them: their tickets and how old they are, incidents they feel through the systems they use, threads waiting on us, repeated follow-ups, escalation language, how many of us they're connected to, and a meeting coming up. Each score is weighted by ARR and comes with the next step (reply, prep, fix). Both checks also run in **Insights**.
 
 ## Architecture
 
@@ -264,6 +266,25 @@ OPTIONAL MATCH (s)<-[:AFFECTS]-(:Ticket)-[:ASSIGNED_TO]->(c:Person)
 WITH s, k1, k2, collect(DISTINCT c.uid) AS k3
 WITH s, k1 + k2 + k3 AS k WHERE $p IN k
 RETURN s.name, s.tier, k   // remove $p from k: empty = orphaned, one left = fragile
+```
+
+**What's blocking a launch — upstream projects, then incidents on what they ship on:**
+```cypher
+MATCH path = (r:Project {uid:$u})-[:BLOCKED_BY*1..4]->(x:Project)
+RETURN x.name, length(path) AS depth, [n IN nodes(path) | n.name] AS via
+```
+```cypher
+MATCH (x:Project)-[:USES]->(s:System) WHERE x.uid IN $chain
+MATCH dp = (s)-[:DEPENDS_ON*0..3]->(d:System)<-[:AFFECTS]-(t:Ticket {status:'open'})
+WHERE t.priority IN ['P1','P2']
+RETURN t.key, x.name, [n IN nodes(dp) | n.name] AS route
+```
+
+**Customer health — incidents a customer feels without filing them:**
+```cypher
+MATCH (:Org {uid:$o})-[:USES]->(s:System)-[:DEPENDS_ON*0..3]->(d:System)<-[:AFFECTS]-(t:Ticket {status:'open'})
+WHERE t.priority IN ['P1','P2'] AND NOT (t)-[:FOR]->(:Org {uid:$o})
+RETURN t.key, t.priority, collect(DISTINCT s.name)[0] AS via
 ```
 
 **Single points of failure:**

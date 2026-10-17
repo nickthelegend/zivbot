@@ -152,6 +152,17 @@ export async function plan(ctx: Ctx, input: string, opts: PlanOpts = {}): Promis
     return done(await writeBrief(ctx, call, ents[0]));
   }
 
+  // ---- customer health: "which customers are at risk?", "how are our customers doing?"
+  if (/\b(customers?|accounts?|clients?)\b.*\b(at risk|risk|health|healthy|churn|happy|unhappy|doing|okay|ok)\b|\b(churn risk|account health|customer health)\b/.test(low) && !first('Org')) {
+    return done((await call('customer_health')).text);
+  }
+
+  // ---- critical path: "what's blocking the EU launch?", "why is OTA 2.4 stuck?"
+  if (/\b(block(ed|ing|ers?)?|stuck|holding .* (up|back)|critical path|unblock|what stands between|when can we (ship|launch))\b/.test(low)) {
+    const x = first('Project');
+    if (x) return done((await call('critical_path', { project: x.uid })).text);
+  }
+
   // ---- absence simulation: "what if Priya is out next week?", "who covers for Raj?"
   if (/\b(leaves?|leaving|quits?|is out|are out|be out|off sick|on leave|on vacation|on holiday|parental leave|goes away|gets sick|hit by a bus|covers? for|cover for|without)\b/.test(low)) {
     const who = first('Person');

@@ -676,7 +676,7 @@ textarea.draft-body { resize: vertical; outline: none; }
 .insight-card header { margin-bottom: 6px; }
 .insight-card h3 { margin: 0; font: 600 15px Sora, Inter, sans-serif; }
 .insight-card header small { font-size: 12px; }
-.insight-card.k-bus, .insight-card.k-spof, .insight-card.k-absence { border-color: color-mix(in srgb, var(--accent) 35%, var(--line)); }
+.insight-card.k-bus, .insight-card.k-spof, .insight-card.k-absence, .insight-card.k-customers, .insight-card.k-blocked { border-color: color-mix(in srgb, var(--accent) 35%, var(--line)); }
 .insight-item { display: flex; gap: 10px; align-items: flex-start; padding: 8px 2px; border-top: 1px solid var(--line); }
 .insight-item:first-of-type { border-top: 0; }
 .insight-item b { display: block; font-size: 13.5px; font-weight: 600; }

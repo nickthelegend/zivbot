@@ -7,7 +7,7 @@ export type Card =
   | { type: 'list'; title?: string; items: { title: string; subtitle?: string; uid?: string; badge?: string; tone?: string }[] }
   | { type: 'draft'; draft: Draft }
   | { type: 'run'; runUid: string }
-  | { type: 'graph'; title?: string; focus?: string[] }
+  | { type: 'graph'; title?: string; focus?: string[]; exact?: boolean }
   | { type: 'agents' }
   | { type: 'note'; text: string }
   | { type: 'customize' }

@@ -229,7 +229,7 @@ export function RunCard({ uid }: { uid: string }) {
 function GraphCard({ card }: { card: Extract<Card, { type: 'graph' }> }) {
   const [g, setG] = useState<{ nodes: GraphNode[]; edges: GraphEdge[] } | null>(null);
   const key = (card.focus || []).join(',');
-  useEffect(() => { if (card.focus?.length) void api.graph({ focus: card.focus }).then(setG).catch(() => {}); }, [key]);
+  useEffect(() => { if (card.focus?.length) void api.graph(card.exact ? { ids: card.focus } : { focus: card.focus }).then(setG).catch(() => {}); }, [key]);
   if (!g || !g.nodes.length) return null;
   return (
     <div className="graph-card">

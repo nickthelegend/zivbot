@@ -114,6 +114,8 @@ export function GraphView() {
               <div className="nd-actions">
                 <button className="btn ghost sm" onClick={() => set({ entity: selected.id })}>Open</button>
                 {selected.label === 'Person' && <button className="btn ghost sm" onClick={() => void askZiv(`What if ${selected.name} is out next week?`)}>What if they're out?</button>}
+                {selected.label === 'Project' && <button className="btn ghost sm" onClick={() => void askZiv(`What's blocking ${selected.name}?`)}>What's blocking it?</button>}
+                {selected.label === 'Org' && <button className="btn ghost sm" onClick={() => void askZiv(`Where are we with ${selected.name}?`)}>Where are we?</button>}
                 {selected.label === 'System' && <button className="btn ghost sm" onClick={() => void askZiv(`What breaks if ${selected.name} goes down?`)}>What if it's down?</button>}
               </div>
             </div>

@@ -12,6 +12,8 @@ import { RULE_KINDS, kindFromText, createRule, evaluateRules } from './rules.ts'
 import { timeline } from './timeline.ts';
 import { findDuplicates } from './identity.ts';
 import { absenceImpact, rankOwners } from './absence.ts';
+import { criticalPath } from './blockers.ts';
+import { customerHealth } from './health.ts';
 
 /**
  * Graph tools — the agent's hands. The LLM agent, the offline planner and the
@@ -25,7 +27,7 @@ export type Card =
   | { type: 'list'; title?: string; items: { title: string; subtitle?: string; uid?: string; badge?: string; tone?: 'red' | 'amber' | 'green' | 'blue' | 'gray' }[] }
   | { type: 'draft'; draft: DraftView }
   | { type: 'run'; runUid: string }
-  | { type: 'graph'; title?: string; focus?: string[] }
+  | { type: 'graph'; title?: string; focus?: string[]; exact?: boolean }
   | { type: 'agents' }
   | { type: 'note'; text: string }
   | { type: 'customize' }
@@ -876,6 +878,75 @@ export const tools: Tool[] = [
       }
       void dot;
       return { text, cards, data: a };
+    },
+  },
+
+  {
+    name: 'critical_path',
+    description: "What's blocking a project or launch: walks BLOCKED_BY upstream, collects open tickets and pending decisions on every project in the chain plus P1/P2 incidents on the systems they run on (through DEPENDS_ON), and ranks the root blockers by how much of the chain each one gates.",
+    params: { type: 'object', properties: { project: { type: 'string' } }, required: ['project'] },
+    async run({ g }, { project }) {
+      const p = await resolve(g, project, ['Project']);
+      if (!p) return { text: `I couldn't find a project called "${project}".` };
+      const c = await criticalPath(g, p.uid);
+      if (!c) return { text: `I couldn't find ${project}.` };
+      if (!c.blockers.length) return { text: `Nothing in the graph is blocking **${c.project.name}**${c.project.status ? ` (status: ${c.project.status})` : ''}.` };
+      const arrow = (b: (typeof c.blockers)[number]) => b.chainNames.slice(1).join(' → ');
+      const label = (b: (typeof c.blockers)[number]) =>
+        b.kind === 'decision' ? `**Decision${b.waitsOnMe ? ' waiting on you' : b.owner ? ` waiting on ${b.owner}` : ''}:** ${b.title}`
+          : `**${b.key}** ${b.priority || ''}${b.kind === 'incident' ? ` on ${b.chainNames[1]}` : ''} — ${clip(b.title, 60)}${b.owner ? ` (${b.owner})` : ''}`;
+      const top = c.blockers.slice(0, 5);
+      const first = top[0];
+      const upstream = c.upstream.length ? ` It waits on ${c.upstream.map((u) => `**${u.name}**${u.status ? ` (${u.status})` : ''}`).join(' → ')}.` : '';
+      const arr = c.customers.reduce((n, o) => n + o.arr, 0);
+      const text = [
+        `**${c.project.name}**${c.project.status ? ` is ${/^(beta|alpha|review)$/.test(c.project.status) ? `in ${c.project.status}` : c.project.status}` : ''}.${upstream}`,
+        '',
+        'Root blockers, most of the chain first:',
+        ...top.map((b, i) => `${i + 1}. ${label(b)}\n   ↳ ${arrow(b)}`),
+        '',
+        `**Unblock first:** ${first.kind === 'decision' ? `the decision "${first.title}"` : first.key} — it gates ${first.gates} project${first.gates > 1 ? 's' : ''}.`,
+        c.customers.length ? `Customers on the line: ${c.customers.map((o) => o.name).join(', ')}${arr ? ` ($${Math.round(arr / 1000)}k ARR)` : ''}.` : '',
+        c.waiting.length ? `Waiting to hear: ${c.waiting.map((w) => w.name).join(', ')}.` : '',
+      ].filter((l, i, a) => l !== '' || a[i - 1] !== '').join('\n').trim();
+      const options = top.slice(0, 3).map((b, i) => ({
+        key: String.fromCharCode(65 + i),
+        label: b.kind === 'decision' ? `Help me decide: ${clip(b.title, 50)}` : b.priority === 'P1' ? `Fix ${b.key} with a coding agent` : `Who should take ${b.key}?`,
+        value: b.kind === 'decision' ? `Help me decide: ${b.title}` : b.priority === 'P1' ? `Fix ${b.key}` : `Who should take ${b.key}?`,
+      }));
+      return {
+        text,
+        cards: [
+          { type: 'graph', title: `What blocks ${c.project.name}`, focus: [...new Set(top.flatMap((b) => b.chain))].slice(0, 16), exact: true },
+          { type: 'options', question: 'Where do you want to start?', options },
+        ],
+        data: c,
+      };
+    },
+  },
+
+  {
+    name: 'customer_health',
+    description: 'Rank every customer by risk from graph signals: their open tickets and age, P1/P2 incidents on systems they use (through DEPENDS_ON), threads waiting on us, repeated follow-ups and escalation language, how many people on our side they connect to, and an imminent meeting. Weighted by ARR, with the next action for each.',
+    params: { type: 'object', properties: {} },
+    async run({ g }) {
+      const rows = await customerHealth(g);
+      if (!rows.length) return { text: 'There are no customers in the graph yet.' };
+      const k = (n: number) => `$${Math.round(n / 1000)}k`;
+      const atRisk = rows.filter((r) => r.level === 'at risk');
+      const text = [
+        atRisk.length ? `**${atRisk.length} customer${atRisk.length > 1 ? 's' : ''} at risk** (${k(atRisk.reduce((n, r) => n + r.arr, 0))} ARR):` : 'No customer is at risk right now:',
+        ...rows.map((r) => `- **${r.name}** — ${r.level}, risk ${r.risk}${r.arr ? ` · ${k(r.arr)} ARR` : ''}${r.signals.length ? `\n  ${r.signals.slice(0, 4).map((s) => s.what).join(' · ')}` : ''}${r.next ? `\n  Next: ${r.next.label}` : ''}`),
+      ].join('\n');
+      const options = rows.filter((r) => r.next && r.level !== 'healthy').slice(0, 3).map((r, i) => ({ key: String.fromCharCode(65 + i), label: `${r.name}: ${r.next!.label}`, value: r.next!.ask }));
+      return {
+        text,
+        cards: [
+          { type: 'list', title: 'Customer health', items: rows.map((r) => ({ title: `${r.name} · risk ${r.risk}`, subtitle: r.signals.slice(0, 2).map((s) => s.what).join(' · ') || 'nothing open', uid: r.uid, badge: r.level, tone: r.level === 'at risk' ? 'red' : r.level === 'watch' ? 'amber' : 'green' })) },
+          ...(options.length ? [{ type: 'options' as const, question: 'Want me to start on one?', options }] : []),
+        ],
+        data: rows,
+      };
     },
   },
 

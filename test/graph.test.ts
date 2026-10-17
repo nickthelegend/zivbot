@@ -233,3 +233,29 @@ test('what if someone is out: orphaned systems, handoffs ranked by the graph, st
   const ins = (await run('insights')).data as any[];
   assert.ok(Array.isArray(ins));
 });
+
+test('critical path: EU Launch waits on OTA 2.4, and the root blocker is the decision waiting on me', async () => {
+  const r = await run('critical_path', { project: 'EU Launch' });
+  const c = r.data as any;
+  assert.deepEqual(c.upstream.map((u: any) => u.name), ['Helios OTA 2.4']);
+  const top = c.blockers[0];
+  assert.equal(top.kind, 'decision');
+  assert.ok(top.waitsOnMe);
+  assert.deepEqual(top.chainNames.slice(1), ['LUM-131', 'Helios OTA 2.4', 'EU Launch']);
+  assert.equal(top.gates, 2);
+  assert.ok(c.blockers.some((b: any) => b.key === 'LUM-145'), 'its own open ticket');
+  assert.ok(c.blockers.some((b: any) => b.key === 'LUM-142' && b.kind === 'incident'), 'an incident on a system it ships on');
+});
+
+test('customer health: Brightwave is at risk, with reasons from tickets, threads and dependencies', async () => {
+  const rows = (await run('customer_health')).data as any[];
+  const bw = rows.find((r) => r.name === 'Brightwave Energy');
+  assert.equal(rows[0].name, 'Brightwave Energy');
+  assert.equal(bw.level, 'at risk');
+  const what = bw.signals.map((s: any) => s.what).join(' | ');
+  assert.match(what, /LUM-139/);
+  assert.match(what, /waiting/);
+  assert.match(what, /hits device-gateway/, 'an incident reached through DEPENDS_ON');
+  assert.equal(bw.next.ask, 'Draft a reply to Kate Morgan');
+  assert.ok(rows.find((r) => r.name === 'Kestrel Homes').risk < bw.risk);
+});

@@ -1,6 +1,8 @@
 import type { UserGraph } from './graph.ts';
 import { DAY } from './util.ts';
 import { absenceImpact } from './absence.ts';
+import { customerHealth } from './health.ts';
+import { criticalPath } from './blockers.ts';
 import { findDuplicates } from './identity.ts';
 
 /**
@@ -13,10 +15,44 @@ export type InsightItem = { title: string; detail: string; uids: string[]; sever
 export type InsightSection = { key: string; title: string; blurb: string; items: InsightItem[] };
 
 export async function insights(g: UserGraph, since = Date.now() - DAY): Promise<InsightSection[]> {
-  const [bus, spof, groups, load, waiting, changed, fleet, dups, stale, absence] = await Promise.all([
-    busFactor(g), singlePoints(g), workingGroups(g), overloaded(g), waitingOnYou(g), whatChanged(g, since), fleetHealth(g), duplicates(g), staleKnowledge(g), keyPeopleAbsence(g),
+  const [bus, spof, groups, load, waiting, changed, fleet, dups, stale, absence, customers, blocked] = await Promise.all([
+    busFactor(g), singlePoints(g), workingGroups(g), overloaded(g), waitingOnYou(g), whatChanged(g, since), fleetHealth(g), duplicates(g), staleKnowledge(g), keyPeopleAbsence(g), customersAtRisk(g), blockedWork(g),
   ]);
-  return [bus, spof, absence, waiting, stale, load, dups, groups, changed, fleet].filter((s) => s.items.length);
+  return [customers, blocked, bus, spof, absence, waiting, stale, load, dups, groups, changed, fleet].filter((s) => s.items.length);
+}
+
+/** Customer health, ranked: only the ones that need attention. */
+async function customersAtRisk(g: UserGraph): Promise<InsightSection> {
+  const rows = (await customerHealth(g)).filter((r) => r.level !== 'healthy');
+  return {
+    key: 'customers', title: 'Customers at risk', blurb: 'Tickets, incidents on what they use, unanswered threads — weighted by ARR',
+    items: rows.slice(0, 4).map((r) => ({
+      title: `${r.name} · risk ${r.risk}`,
+      detail: r.signals.slice(0, 3).map((s) => s.what).join(' · '),
+      uids: [r.uid, ...r.signals.flatMap((s) => s.uids)].slice(0, 6),
+      severity: r.level === 'at risk' ? 'high' as const : 'medium' as const,
+      ask: r.next?.ask,
+    })),
+  };
+}
+
+/** Projects with something upstream in the way, and the root blocker to clear first. */
+async function blockedWork(g: UserGraph): Promise<InsightSection> {
+  const projects = await g.q(`MATCH (p:Project) WHERE p.status IN ['blocked', 'at risk'] OR (p)-[:BLOCKED_BY]->() RETURN p.uid AS uid`, {}, '~blocked projects');
+  const paths = (await Promise.all(projects.map((p) => criticalPath(g, p.uid)))).filter((c): c is NonNullable<typeof c> => !!c && c.blockers.length > 0);
+  return {
+    key: 'blocked', title: 'Blocked work', blurb: 'BLOCKED_BY chains, walked to the root blocker',
+    items: paths.map((c) => {
+      const b = c.blockers[0];
+      return {
+        title: `${c.project.name}: clear ${b.kind === 'decision' ? `"${b.title}"` : b.key} first`,
+        detail: `${b.chainNames.slice(1).join(' → ')}${b.waitsOnMe ? ' · waiting on you' : b.owner ? ` · ${b.owner}` : ''} · ${c.blockers.length} blocker${c.blockers.length > 1 ? 's' : ''} in all`,
+        uids: [...new Set(b.chain)],
+        severity: b.waitsOnMe || b.priority === 'P1' ? 'high' as const : 'medium' as const,
+        ask: `What's blocking ${c.project.name}?`,
+      };
+    }),
+  };
 }
 
 /** Simulate each colleague being out and rank who leaves the biggest hole. */
