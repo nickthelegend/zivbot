@@ -55,3 +55,24 @@ console.log('\nForge chat:'); show((await api(`/api/conversations/${await convOf
 console.log('fleet routing', JSON.stringify((await api('/api/fleet')).routing.slice(0, 3).map((r) => [r.name, r.score, r.reasons.join('; ')])));
 console.log('stats', JSON.stringify((await api('/api/stats')).labels.slice(0, 12)));
 console.log(`\nUSER=${USER}`);
+
+// ---- act: approve the coding job with Codex, wait for the real run, then reply to the customer
+if (process.env.E2E_RUN !== '0') {
+  const ziv2 = await convOf('Ziv');
+  const msgs = (await api(`/api/conversations/${ziv2}/messages`)).messages;
+  const draft = msgs.flatMap((m) => m.cards || []).filter((c) => c.type === 'draft' && c.draft.kind === 'run').pop()?.draft;
+  console.log('\napproving', draft?.title, 'with codex');
+  console.log(await api(`/api/drafts/${draft.uid}/approve`, { agent: process.env.E2E_AGENT || 'codex' }));
+  let run;
+  for (let i = 0; i < 160; i++) {
+    await sleep(3000);
+    run = (await api('/api/runs')).find((r) => !r.synthetic && r.kind !== 'handoff' && r.agentKind !== 'dot');
+    if (run && run.status !== 'running') break;
+  }
+  console.log('run', run.status, run.tests, run.branch, `${Math.round((run.endedAt - run.startedAt) / 1000)}s`);
+  console.log('\nForge reports:'); show((await api(`/api/conversations/${await convOf('Forge')}/messages`)).messages.slice(-1));
+  console.log('\n> Draft a reply to Kate Morgan');
+  show(await say(ziv2, 'Draft a reply to Kate Morgan'));
+  console.log('\n> what did Brightwave ask for last month, and was it resolved?');
+  show(await say(ziv2, 'what did Brightwave ask for last month, and was it resolved?'));
+}

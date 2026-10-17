@@ -198,7 +198,7 @@ export async function dispatchRun(userId: string, g: UserGraph, req: RunRequest)
     const status = quota ? 'quota' : code === 0 && (tests.ok || tests.summary === 'not run') ? 'succeeded' : 'failed';
     const endedAt = Date.now();
     // the agent's own two-line wrap-up ("Root cause: … / Fix: …"), if it wrote one
-    const summary = (log.match(/(Root cause[\s\S]{0,600})/i)?.[1] || '').split('\n').filter((l) => l.trim() && !l.startsWith('$')).slice(0, 3).join('\n');
+    const summary = (log.match(/(Root cause[\s\S]{0,600})/i)?.[1] || '').split('\n').filter((l) => l.trim() && !l.startsWith('$') && !/^\d+ passed/.test(l.trim())).slice(0, 2).join('\n');
     await g.q(
       `MATCH (r:Run {uid:$uid}) SET r.status=$status, r.endedAt=$endedAt, r.exitCode=$code, r.tests=$tests, r.diff=$diff, r.branch=$branch, r.log=$log, r.summary=$summary`,
       { uid: runUid, status, endedAt, code, tests: tests.summary, diff: diff.trim(), branch, log: log.slice(-6000), summary },

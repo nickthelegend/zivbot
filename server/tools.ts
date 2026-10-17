@@ -362,7 +362,7 @@ export const tools: Tool[] = [
       const mail = await g.q(
         `MATCH (o:Org {uid:$o})<-[:WORKS_AT]-(p:Person)<-[:FROM]-(e:Email) WHERE e.at > $since
          OPTIONAL MATCH (e)-[:MENTIONS]->(t:Ticket)
-         RETURN e.subject AS subject, e.body AS body, e.at AS at, p.name AS from, collect(DISTINCT t.key) AS tickets ORDER BY e.at`,
+         RETURN e.uid AS uid, p.uid AS fromUid, e.subject AS subject, e.body AS body, e.at AS at, p.name AS from, collect(DISTINCT t.key) AS tickets ORDER BY e.at`,
         { o: orgUid, since },
         'their emails in the window',
       );
@@ -372,10 +372,11 @@ export const tools: Tool[] = [
         { o: orgUid },
         'their tickets',
       );
-      const meetings = await g.q(`MATCH (e:Event)-[:ABOUT]->(o:Org {uid:$o}) WHERE e.start > $now RETURN e.title AS title, e.start AS start`, { o: orgUid, now: Date.now() }, 'upcoming meetings with them');
-      const open = tix.filter((t) => t.status !== 'resolved');
+      const meetings = await g.q(`MATCH (e:Event)-[:ABOUT]->(o:Org {uid:$o}) WHERE e.start > $now RETURN e.uid AS uid, e.title AS title, e.start AS start`, { o: orgUid, now: Date.now() }, 'upcoming meetings with them');
+      const open = tix.filter((t) => t.status === 'open');
+      const ready = tix.filter((t) => t.status === 'fix ready' || (t.fixes > 0 && t.status !== 'resolved'));
       return {
-        text: `**${o.label === 'Person' ? o.name + "'s org" : o.name}** — last ${days} days\n\nThey asked:\n${mail.map((m) => `- ${ago(m.at)}: "${m.subject}" — ${clip(m.body, 110)}${m.tickets.length ? ` (${m.tickets.join(', ')})` : ''}`).join('\n') || '- nothing by email'}\n\nTickets:\n${tix.map((t) => `- ${t.key} ${t.title} — **${t.status}**${t.status === 'resolved' ? ` ${ago(t.resolvedAt)}` : `, open ${ago(t.at).replace(' ago', '')}, ${t.assignee}`}`).join('\n') || '- none'}\n\n${open.length ? `**Not resolved:** ${open.map((t) => t.key).join(', ')}.` : 'Everything they raised is resolved.'}${meetings.length ? `\nNext meeting: ${meetings[0].title}, ${when(meetings[0].start)}.` : ''}`,
+        text: `**${o.label === 'Person' ? o.name + "'s org" : o.name}** — last ${days} days\n\nThey asked:\n${mail.map((m) => `- ${ago(m.at)}: "${m.subject}" — ${clip(m.body, 110)}${m.tickets.length ? ` (${m.tickets.join(', ')})` : ''}`).join('\n') || '- nothing by email'}\n\nTickets:\n${tix.map((t) => `- ${t.key} ${t.title} — **${t.status}**${t.status === 'resolved' ? ` ${ago(t.resolvedAt)}` : `, open ${ago(t.at).replace(' ago', '')}, ${t.assignee}`}`).join('\n') || '- none'}\n\n${open.length ? `**Not resolved:** ${open.map((t) => t.key).join(', ')}.` : ready.length ? `**Fixed, not shipped yet:** ${ready.map((t) => t.key).join(', ')} — tell them it lands with the next deploy.` : 'Everything they raised is resolved.'}${meetings.length ? `\nNext meeting: ${meetings[0].title}, ${when(meetings[0].start)}.` : ''}`,
         cards: [{ type: 'list', title: 'Tickets', items: tix.map((t) => ({ title: `${t.key} · ${t.title}`, subtitle: t.assignee, uid: t.uid, badge: t.status, tone: t.status === 'resolved' ? 'green' : priorityTone(t.priority) })) }],
         data: { mail, tickets: tix, meetings },
       };

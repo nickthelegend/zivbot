@@ -1,0 +1,38 @@
+// Capture README screenshots of a running ZivBot: electron scripts/shots.cjs <userId> <outDir>
+const { app, BrowserWindow } = require('electron');
+const fs = require('node:fs');
+const path = require('node:path');
+const [user, out] = process.argv.slice(-2);
+const BASE = 'http://localhost:8787';
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+app.whenReady().then(async () => {
+  const win = new BrowserWindow({ width: 1440, height: 900, show: false, backgroundColor: '#141414', webPreferences: { offscreen: true } });
+  win.webContents.setZoomFactor(1);
+  await win.loadURL(`${BASE}/?pair=${user}`);
+  await sleep(3500);
+  const js = (code) => win.webContents.executeJavaScript(code);
+  const shot = async (name) => { await sleep(900); const img = await win.webContents.capturePage(); fs.writeFileSync(path.join(out, `${name}.png`), img.toPNG()); console.log('saved', name); };
+  const click = (sel, text) => js(`(() => { const els = [...document.querySelectorAll(${JSON.stringify(sel)})].filter(e => !${JSON.stringify(text || '')} || e.textContent.includes(${JSON.stringify(text || '')})); const el = els[els.length - 1]; if (el) el.click(); return !!el; })()`);
+  await click('.conv', 'Ziv');
+  await sleep(1500);
+  await js(`document.querySelector('.messages').scrollTop = 0`);
+  await js(`(() => { const rows=[...document.querySelectorAll('.bot-row')]; const r = rows.find(r => r.textContent.includes('A few things I could take')); if (r) r.scrollIntoView({block:'start'}); })()`);
+  await shot('chat');
+  await js(`document.querySelector('.messages').scrollTop = 1e9`);
+  await click('.trace-link');
+  await sleep(1800);
+  await shot('trace');
+  await js(`document.querySelector('.drawer-backdrop')?.click()`);
+  await click('.conv', 'Forge');
+  await sleep(1500);
+  await js(`document.querySelector('.messages').scrollTop = 1e9`);
+  await shot('forge-run');
+  await click('.side-nav button', 'Graph');
+  await sleep(5000);
+  await shot('graph');
+  await click('.side-nav button', 'Chats');
+  await click('.connect-pill');
+  await sleep(800);
+  await shot('connect');
+  app.quit();
+});

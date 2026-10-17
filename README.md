@@ -6,7 +6,13 @@
 > **Track:** Agents That Act on Connected Data (primary). It also covers Agent Memory and Coordination: per-user graphs, episodic/semantic/procedural memory, and dot-to-dot handoffs.
 > **Demo video:** _link_ · **Live:** _link_ · **Built in:** Oct 15–18, 2026
 
-<p align="center"><img src="docs/screenshots/chat.png" width="880" alt="ZivBot chat"></p>
+<p align="center"><img src="docs/screenshots/chat.png" width="880" alt="Ziv triaging from the graph"></p>
+
+| Show path: the Cypher behind every answer | A real Codex run, picked by graph routing |
+|---|---|
+| <img src="docs/screenshots/trace.png" alt="Trace drawer"> | <img src="docs/screenshots/forge-run.png" alt="Forge running Codex"> |
+| **Your graph + Cypher console** | **Connect Apps: 28 connectors and your AI subscriptions** |
+| <img src="docs/screenshots/graph.png" alt="Graph explorer"> | <img src="docs/screenshots/connect.png" alt="Connect Apps"> |
 
 ---
 
@@ -296,7 +302,9 @@ cd desktop && npm install && npm run bundle && npm start
 
 ### Android
 
-`mobile/` is an Expo (SDK 52) app. Pair it by scanning the QR code under *profile panel → Phone* on your computer. From then on your phone talks to the dots on your computer: the same graph, with native notifications and haptics. The coding agents and your data stay on your machine.
+`mobile/` is an Expo (SDK 52) app. <p><img src="docs/screenshots/android-pair.png" width="240"> <img src="docs/screenshots/android-chats.png" width="240"></p>
+
+Pair it by scanning the QR code under *profile panel → Phone* on your computer. From then on your phone talks to the dots on your computer: the same graph, with native notifications and haptics. The coding agents and your data stay on your machine.
 
 ```bash
 cd mobile && npm install && npx expo start --android
