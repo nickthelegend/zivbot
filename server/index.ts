@@ -17,6 +17,7 @@ import { routeJob, syncFleet } from './fleet.ts';
 import { toolByName } from './tools.ts';
 import { startProactive, scanUser } from './proactive.ts';
 import { LABEL_META } from './schema.ts';
+import { insights } from './insights.ts';
 
 const ROOT = process.env.ZIV_ROOT || resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const app = new Hono();
@@ -245,6 +246,11 @@ app.get('/api/stats', async (c) => {
   const labels = await g.q(`MATCH (n) WITH [l IN labels(n) WHERE l <> 'Searchable'][0] AS label RETURN label, count(*) AS n ORDER BY n DESC`);
   const rels = await g.q(`MATCH ()-[r]->() RETURN type(r) AS type, count(*) AS n ORDER BY n DESC`);
   return c.json({ graph: g.name, labels, rels, nodes: labels.reduce((s, l) => s + l.n, 0), edges: rels.reduce((s, r) => s + r.n, 0), graphs: (await listGraphs()).length });
+});
+
+app.get('/api/insights', async (c) => {
+  const g = await userGraph(user(c));
+  return c.json(await insights(g, Number(c.req.query('since')) || undefined));
 });
 
 app.get('/api/memory', async (c) => {

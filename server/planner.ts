@@ -170,6 +170,11 @@ export async function plan(ctx: Ctx, input: string, opts: PlanOpts = {}): Promis
     if (x) return done((await call('customer_history', { org: x.uid })).text);
   }
 
+  if (/\b(risks?|risky|insights?|single points? of failure|bus factor|overloaded|stretched|what changed|since yesterday|health ?check|anything (worrying|i should worry))\b/.test(low)) {
+    const focus = /bus factor|knows it/.test(low) ? 'bus' : /single point|spof/.test(low) ? 'spof' : /overload|stretched/.test(low) ? 'load' : /what changed|since yesterday/.test(low) ? 'changed' : undefined;
+    return done(`Here's what the graph says you should worry about:\n\n${(await call('insights', { focus })).text}`);
+  }
+
   if (/(important|key|central|influential) (people|person|contacts)|who matters|brokers?\b|working groups/.test(low)) {
     return done((await call('key_people')).text);
   }

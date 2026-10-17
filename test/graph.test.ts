@@ -114,3 +114,15 @@ test('semantic memory: vector search finds meaning, then the graph says what it 
   const idx = await g.q(`CALL db.indexes() YIELD label, types RETURN label, types`);
   assert.ok(idx.some((i: any) => i.label === 'Memorable'));
 });
+
+test('insights: bus factor, single points of failure and who is waiting come from the graph', async () => {
+  const { insights } = await import('../server/insights.ts');
+  const secs = await insights(g);
+  const by = (k: string) => secs.find((s) => s.key === k)!;
+  assert.ok(by('bus').items.some((i) => i.title.startsWith('auth-service')), 'auth-service has a bus factor of 1');
+  const spof = by('spof').items[0];
+  assert.match(spof.title, /auth-service holds up 6 systems/);
+  assert.ok(spof.uids.includes('system:mobile-app') && spof.uids.includes('org:kestrel'));
+  assert.ok(by('waiting').items.some((i) => i.title.startsWith('Kate Morgan')));
+  assert.ok(!by('waiting').items.some((i) => i.title.startsWith('Daniel Ross')), 'a thank-you is not waiting on a reply');
+});

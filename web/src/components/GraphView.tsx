@@ -3,6 +3,7 @@ import { api, type GraphEdge, type GraphNode } from '../api';
 import { useStore, set } from '../store';
 import { ForceGraph } from './ForceGraph';
 import { Icon } from './icons';
+import { InsightsPanel } from './InsightsPanel';
 
 const SAMPLES = [
   ['Who knows payments-api', `MATCH (p:Person)<-[:AUTHORED_BY]-(c:Commit)-[:TOUCHES]->(:File)-[:IN_REPO]->(:Repo)-[:IMPLEMENTS]->(:System {name:'payments-api'})\nRETURN p.name AS person, count(DISTINCT c) AS commits ORDER BY commits DESC`],
@@ -25,6 +26,8 @@ export function GraphView() {
   const [query, setQuery] = useState(SAMPLES[0][1]);
   const [result, setResult] = useState<{ rows: any[]; text: string } | null>(null);
   const [search, setSearch] = useState('');
+  const [tab, setTab] = useState<'explore' | 'insights'>('explore');
+  const [focusSet, setFocusSet] = useState<Set<string> | null>(null);
 
   useEffect(() => {
     void api.graph({ limit: 900 }).then(setData);
@@ -39,10 +42,11 @@ export function GraphView() {
     return { nodes, edges: data.edges.filter((e) => ids.has(e.source) && ids.has(e.target)) };
   }, [data, hidden]);
   const dim = useMemo(() => {
+    if (focusSet && view) return new Set(view.nodes.filter((n) => !focusSet.has(n.id)).map((n) => n.id));
     if (!search.trim() || !view) return undefined;
     const q = search.toLowerCase();
     return new Set(view.nodes.filter((n) => !(n.name || '').toLowerCase().includes(q)).map((n) => n.id));
-  }, [search, view]);
+  }, [search, view, focusSet]);
   const counts = useMemo(() => {
     const m = new Map<string, number>();
     for (const n of data?.nodes || []) m.set(n.label, (m.get(n.label) || 0) + 1);
@@ -56,7 +60,11 @@ export function GraphView() {
           <h2>Your graph</h2>
           <div className="muted">FalkorDB · <code>{stats?.graph}</code> · {stats?.nodes} nodes · {stats?.edges} edges · one isolated graph per user</div>
         </div>
-        <div className="search-box sm"><Icon.search size={15} /><input placeholder="Find a node" value={search} onChange={(e) => setSearch(e.target.value)} /></div>
+        <div className="seg big">
+          <button className={tab === 'explore' ? 'on' : ''} onClick={() => setTab('explore')}><Icon.graph size={14} /> Explore</button>
+          <button className={tab === 'insights' ? 'on' : ''} onClick={() => setTab('insights')}><Icon.spark size={14} /> Insights</button>
+        </div>
+        <div className="search-box sm"><Icon.search size={15} /><input placeholder="Find a node" value={search} onChange={(e) => { setSearch(e.target.value); setFocusSet(null); }} /></div>
         <div className="seg">
           <button className={sizeBy === 'degree' ? 'on' : ''} onClick={() => setSizeBy('degree')}>Size: links</button>
           <button className={sizeBy === 'rank' ? 'on' : ''} onClick={() => setSizeBy('rank')}>Size: PageRank</button>
@@ -73,6 +81,15 @@ export function GraphView() {
           </button>
         ))}
       </div>
+      {tab === 'insights' ? (
+        <InsightsPanel onShow={(uids) => {
+          const extra = new Set(uids);
+          // make sure focused nodes are visible even if their label is filtered out
+          setHidden(new Set([...hidden].filter((l) => !(data?.nodes || []).some((n) => extra.has(n.id) && n.label === l))));
+          setFocusSet(extra);
+          setTab('explore');
+        }} />
+      ) : (
       <div className="graph-main">
         <div className="graph-canvas">
           {view ? <ForceGraph nodes={view.nodes} edges={view.edges} height="100%" sizeBy={sizeBy} colorBy={colorBy} selected={selected?.id} dim={dim} onNodeClick={setSelected} /> : <div className="center-msg"><span className="spinner" /></div>}
@@ -96,6 +113,8 @@ export function GraphView() {
           )}
         </div>
       </div>
+      )}
+      {focusSet && tab === 'explore' && <button className="focus-clear" onClick={() => setFocusSet(null)}><Icon.close size={13} /> Clear highlight</button>}
     </div>
   );
 }

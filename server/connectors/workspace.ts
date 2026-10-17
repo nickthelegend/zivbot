@@ -80,7 +80,7 @@ export async function ingestMail(g: UserGraph) {
         lastAt: now + last.at,
         count: msgs.length,
         // waiting on me = the last message is from someone else and not a newsletter
-        awaitingReply: last.from !== 'me' && !(last.labels || []).includes('newsletter'),
+        awaitingReply: last.from !== 'me' && !(last.labels || []).some((l) => l === 'newsletter' || l === 'fyi'),
         newsletter: (last.labels || []).includes('newsletter'),
         source: 'gmail',
       },

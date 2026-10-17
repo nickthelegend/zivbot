@@ -667,3 +667,23 @@ textarea.draft-body { resize: vertical; outline: none; }
 .profile-card { border-radius: 20px; }
 .edit-badge { background: var(--panel); }
 .computer .bar i.busy { background: var(--ember); }
+
+/* insights */
+.seg.big button { display: inline-flex; gap: 6px; align-items: center; padding: 6px 12px; font-size: 13px; }
+.insights { flex: 1; overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 14px; align-content: start; padding: 4px 2px 20px; }
+.insight-card { background: var(--panel); border: 1px solid var(--line); border-radius: 18px; padding: 14px 14px 8px; }
+.insight-card header { margin-bottom: 6px; }
+.insight-card h3 { margin: 0; font: 600 15px Sora, Inter, sans-serif; }
+.insight-card header small { font-size: 12px; }
+.insight-card.k-bus, .insight-card.k-spof { border-color: color-mix(in srgb, var(--accent) 35%, var(--line)); }
+.insight-item { display: flex; gap: 10px; align-items: flex-start; padding: 8px 2px; border-top: 1px solid var(--line); }
+.insight-item:first-of-type { border-top: 0; }
+.insight-item b { display: block; font-size: 13.5px; font-weight: 600; }
+.insight-item small { display: block; font-size: 12.5px; line-height: 1.45; }
+.sev { width: 8px; height: 8px; border-radius: 50%; margin-top: 6px; flex: none; background: var(--muted); }
+.sev-high { background: #ff4d5e; box-shadow: 0 0 0 3px rgba(255, 77, 94, .18); }
+.sev-medium { background: var(--accent); }
+.insight-actions { display: flex; gap: 2px; }
+.insight-actions .icon-btn { width: 28px; height: 28px; }
+.focus-clear { position: absolute; left: 50%; bottom: 26px; transform: translateX(-50%); display: inline-flex; gap: 6px; align-items: center; padding: 7px 12px; border-radius: 12px; background: var(--panel); border: 1px solid var(--line-2); box-shadow: var(--shadow); font-size: 13px; }
+.graph-view { position: relative; }

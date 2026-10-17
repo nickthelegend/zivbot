@@ -6,6 +6,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { zivHome } from './connectors/git.ts';
 import { semanticSearch, embedPending } from './semantic.ts';
+import { insights } from './insights.ts';
 
 /**
  * Graph tools — the agent's hands. The LLM agent, the offline planner and the
@@ -465,6 +466,22 @@ export const tools: Tool[] = [
         text: rows.length ? `You never reply to these senders:\n${rows.map((r) => `- **${r.name}** (${r.email}) — ${r.n} email${r.n > 1 ? 's' : ''}, last ${ago(r.last)}`).join('\n')}` : 'Your inbox is clean.',
         cards: [{ type: 'list', title: 'Unsubscribe candidates', items: rows.map((r) => ({ title: r.name, subtitle: `${r.n} emails · last ${ago(r.last)}`, uid: r.uid, badge: 'newsletter', tone: 'gray' })) }],
         data: rows,
+      };
+    },
+  },
+
+  {
+    name: 'insights',
+    description: 'Graph-wide risk and health check: bus factor on critical systems, single points of failure (betweenness on DEPENDS_ON), who is overloaded, who is waiting on me, working groups (label propagation), what changed in the last 24h, agent fleet record.',
+    params: { type: 'object', properties: { focus: { type: 'string', description: 'optional: bus | spof | waiting | load | groups | changed | fleet' } } },
+    async run({ g }, { focus }) {
+      const all = await insights(g);
+      const secs = focus ? all.filter((s) => s.key === focus) : all;
+      if (!secs.length) return { text: 'Nothing stands out in the graph right now.' };
+      return {
+        text: secs.map((s) => `**${s.title}**\n${s.items.slice(0, 4).map((i) => `- ${i.severity === 'high' ? '🔴 ' : i.severity === 'medium' ? '🟠 ' : ''}${i.title} — ${i.detail}`).join('\n')}`).join('\n\n'),
+        cards: [{ type: 'graph', title: 'Insights', focus: secs.flatMap((s) => s.items.flatMap((i) => i.uids)).slice(0, 30) }],
+        data: secs,
       };
     },
   },

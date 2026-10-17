@@ -15,7 +15,7 @@ export async function upsertNodes(g: UserGraph, label: string, nodes: NodeIn[], 
     await g.q(
       `UNWIND $rows AS r
        MERGE (n:${label} {uid: r.uid})
-       SET n += r.props ${searchable ? ", n:Searchable, n.search = CASE WHEN r.search = '' THEN coalesce(n.search, '') ELSE r.search END" : ''}`,
+       SET n += r.props, n.firstSeen = coalesce(n.firstSeen, timestamp()), n.lastSeen = timestamp() ${searchable ? ", n:Searchable, n.search = CASE WHEN r.search = '' THEN coalesce(n.search, '') ELSE r.search END" : ''}`,
       { rows: chunk },
       `${['Draft','Episode','Answer','Conversation','Dot'].includes(label) ? '~' : ''}ingest ${label}`,
     );
