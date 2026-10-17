@@ -430,7 +430,13 @@ export const tools: Tool[] = [
     description: 'Prepare me for a meeting: follow the event to its attendees, their organisations, open and fixed tickets, recent mail and what is still unanswered, related decisions, and write a brief with a suggested agenda.',
     params: { type: 'object', properties: { meeting: { type: 'string', description: 'event name/uid, or a person or org I am meeting next' } }, required: ['meeting'] },
     async run({ g, userId, dot }, { meeting }) {
-      let ev = await resolve(g, meeting, ['Event']);
+      // a person or org by exact name wins over a fuzzy event match
+      const who = await g.one(
+        `MATCH (n:Searchable) WHERE (n:Person OR n:Org) AND (toLower(n.name) = $t OR toLower(n.first) = $t OR $t IN [a IN coalesce(n.aliases, []) | toLower(a)]) RETURN n.uid AS uid`,
+        { t: String(meeting).toLowerCase().trim() },
+        '~is this a person or org',
+      );
+      let ev = who ? null : await resolve(g, meeting, ['Event']);
       if (!ev) {
         // "prep me for Kate" / "for Brightwave": the next event with them
         const x = await resolve(g, meeting, ['Person', 'Org']);

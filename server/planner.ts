@@ -216,7 +216,8 @@ export async function plan(ctx: Ctx, input: string, opts: PlanOpts = {}): Promis
   }
 
   if (/\b(prep|prepare|brief) (me )?(for|on)\b|\bmeeting prep\b|\bget me ready for\b/.test(low)) {
-    const target = t.replace(/^.*?\b(prep|prepare|brief|ready)\b( me)?( for| on)?( the| my)?\s*/i, '').replace(/[?.!]+$/, '').trim();
+    const withWho = t.match(/\b(?:meeting|call|sync|1:1|chat|catch-?up)\s+with\s+(.+?)[?.!]*$/i)?.[1];
+    const target = withWho || t.replace(/^.*?\b(prep|prepare|brief|ready)\b( me)?( for| on)?( the| my)?\s*/i, '').replace(/[?.!]+$/, '').trim();
     return done((await call('meeting_prep', { meeting: target || 'next meeting' })).text);
   }
 
