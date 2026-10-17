@@ -11,6 +11,7 @@ export type Card =
   | { type: 'agents' }
   | { type: 'note'; text: string }
   | { type: 'customize' }
+  | { type: 'timeline'; title: string; items: { uid: string; at: number; label: string; name: string; who?: string; rel: string; hop: number }[] }
   | { type: 'file'; uid: string; name: string; size: number }
   | { type: 'exchange'; conv: string; with: { uid: string; name: string; avatar?: string; color?: string }; count: number; verb: 'messaged' | 'with' };
 

@@ -17,6 +17,7 @@ export function CardView({ card, conv, answered, latest }: { card: Card; conv: s
     case 'agents': return <AgentsCard />;
     case 'note': return <div className="note-chip"><Icon.check size={14} /> {card.text}</div>;
     case 'customize': return <CustomizeChip />;
+    case 'timeline': return <TimelineCard card={card} />;
     case 'file': return <FileCard card={card} />;
     case 'exchange': return null;
   }
@@ -83,6 +84,30 @@ function Verified() {
       <path fill="#1d9bf0" d="M12 1.5l2.6 1.9 3.2-.2 1 3 2.7 1.8-1 3 1 3-2.7 1.8-1 3-3.2-.2L12 22.5l-2.6-1.9-3.2.2-1-3L2.5 16l1-3-1-3 2.7-1.8 1-3 3.2.2z" />
       <path d="m7.5 12.2 3 3 6-6.4" stroke="#fff" strokeWidth="2.2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
+  );
+}
+
+function TimelineCard({ card }: { card: Extract<Card, { type: 'timeline' }> }) {
+  const meta = useStore((s) => s.labels);
+  const [all, setAll] = useState(false);
+  const items = all ? card.items : card.items.slice(-8);
+  const fmt = (t: number) => new Date(t).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  return (
+    <div className="timeline-card">
+      <div className="list-title">Story of {card.title}</div>
+      {!all && card.items.length > 8 && <button className="link-btn" onClick={() => setAll(true)}>Show {card.items.length - 8} earlier</button>}
+      <ol className="tl">
+        {items.map((i, n) => (
+          <li key={`${i.uid}-${n}`} onClick={() => set({ entity: i.uid })}>
+            <span className="tl-dot" style={{ background: meta[i.label]?.color || '#999' }} />
+            <div className="tl-body">
+              <small>{fmt(i.at)} · {i.label}{i.who ? ` · ${i.who}` : ''}{i.hop === 2 ? ' · via' : ''}</small>
+              <span>{i.name}</span>
+            </div>
+          </li>
+        ))}
+      </ol>
+    </div>
   );
 }
 

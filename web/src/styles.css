@@ -744,3 +744,14 @@ kbd { font: 500 11px Inter, sans-serif; color: var(--muted); background: var(--c
 /* live graph while a dot thinks */
 .live-graph { position: relative; width: min(420px, 100%); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; background: var(--bubble); animation: rise .25s ease-out; }
 .live-count { position: absolute; right: 10px; bottom: 8px; font-size: 11px; color: var(--accent-2); font-family: 'JetBrains Mono', monospace; }
+
+/* timeline */
+.timeline-card { background: var(--bubble); border: 1px solid var(--line); border-radius: 18px; padding: 12px 14px; width: 100%; max-width: 560px; }
+.tl { list-style: none; margin: 6px 0 0; padding: 0 0 0 6px; position: relative; }
+.tl::before { content: ''; position: absolute; left: 10px; top: 6px; bottom: 6px; width: 2px; background: var(--line-2); border-radius: 2px; }
+.tl li { position: relative; display: flex; gap: 12px; padding: 6px 4px 6px 0; cursor: pointer; border-radius: 10px; }
+.tl li:hover { background: var(--hover); }
+.tl-dot { width: 10px; height: 10px; border-radius: 50%; margin-top: 5px; flex: none; position: relative; z-index: 1; box-shadow: 0 0 0 3px var(--bubble); }
+.tl-body { display: flex; flex-direction: column; min-width: 0; }
+.tl-body small { font-size: 11.5px; }
+.tl-body span { font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

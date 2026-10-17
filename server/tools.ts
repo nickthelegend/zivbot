@@ -9,6 +9,7 @@ import { semanticSearch, embedPending } from './semantic.ts';
 import { insights } from './insights.ts';
 import { runAlgorithm, ALGORITHMS, type AlgoName } from './algorithms.ts';
 import { RULE_KINDS, kindFromText, createRule, evaluateRules } from './rules.ts';
+import { timeline } from './timeline.ts';
 
 /**
  * Graph tools — the agent's hands. The LLM agent, the offline planner and the
@@ -26,6 +27,7 @@ export type Card =
   | { type: 'agents' }
   | { type: 'note'; text: string }
   | { type: 'customize' }
+  | { type: 'timeline'; title: string; items: { uid: string; at: number; label: string; name: string; who?: string; rel: string; hop: number }[] }
   | { type: 'file'; uid: string; name: string; size: number }
   | { type: 'exchange'; conv: string; with: { uid: string; name: string; avatar?: string; color?: string }; count: number; verb: 'messaged' | 'with' };
 
@@ -549,6 +551,24 @@ export const tools: Tool[] = [
         text: rows.length ? `You never reply to these senders:\n${rows.map((r) => `- **${r.name}** (${r.email}) — ${r.n} email${r.n > 1 ? 's' : ''}, last ${ago(r.last)}`).join('\n')}` : 'Your inbox is clean.',
         cards: [{ type: 'list', title: 'Unsubscribe candidates', items: rows.map((r) => ({ title: r.name, subtitle: `${r.n} emails · last ${ago(r.last)}`, uid: r.uid, badge: 'newsletter', tone: 'gray' })) }],
         data: rows,
+      };
+    },
+  },
+
+  {
+    name: 'timeline',
+    description: 'The story of any entity (ticket, customer, person, system, project, decision): every time-stamped thing one or two hops away — mail, chat, commits, decisions, runs, approvals, meetings — with who acted, in order.',
+    params: { type: 'object', properties: { ref: { type: 'string' } }, required: ['ref'] },
+    async run({ g }, { ref }) {
+      const x = await resolve(g, ref);
+      if (!x) return { text: `I couldn't find "${ref}".` };
+      const items = await timeline(g, x.uid);
+      if (!items.length) return { text: `Nothing time-stamped is connected to ${x.name} yet.` };
+      const day = (t: number) => new Date(t).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      return {
+        text: `The story of **${x.name}** — ${items.length} moments from your graph:\n${items.slice(-12).map((i) => `- ${day(i.at)} · ${i.label}${i.who ? ` by ${i.who}` : ''}: ${clip(i.name, 90)}`).join('\n')}`,
+        cards: [{ type: 'timeline', title: x.name, items }],
+        data: items,
       };
     },
   },

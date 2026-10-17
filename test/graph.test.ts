@@ -191,3 +191,12 @@ test('watch rules: a graph pattern fires once per match, as procedural memory', 
   const rules = await listRules(g);
   assert.ok(rules.length >= 2 && rules.every((x: any) => x.active));
 });
+
+test('timeline: the story of a ticket in order, with who acted', async () => {
+  const { timeline } = await import('../server/timeline.ts');
+  const items = await timeline(g, 'ticket:LUM-139');
+  assert.ok(items.length >= 4);
+  for (let i = 1; i < items.length; i++) assert.ok(items[i].at >= items[i - 1].at, 'sorted by time');
+  assert.equal(items[0].who, 'Kate Morgan', 'it starts with Kate writing in');
+  assert.ok(items.some((i) => i.name.endsWith('— created')));
+});
