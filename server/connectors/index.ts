@@ -110,7 +110,7 @@ export async function catalogFor(userId: string) {
       fields: (c.fields || []).map((f) => ({ key: f.key, label: f.label, secret: !!f.secret, placeholder: f.placeholder, optional: !!f.optional, env: f.env, help: f.help })),
       configured: configuredFields(userId, c.id, c.fields),
       actions: (c.actions || []).map((a) => ({ name: a.name, description: a.description, mutates: a.mutates })),
-      status: agent ? (agent.installed ? 'connected' : 'not installed') : config.hosted && DESKTOP_ONLY.has(c.id) ? 'desktop only' : s?.status || 'available',
+      status: config.hosted && (agent || DESKTOP_ONLY.has(c.id)) ? 'desktop only' : agent ? (agent.installed ? 'connected' : 'not installed') : s?.status || 'available',
       mode: s?.mode, lastSync: s?.lastSync, counts: s?.counts ? JSON.parse(s.counts) : undefined, error: s?.error, version: agent?.version,
     };
   });
@@ -121,7 +121,7 @@ export async function catalogFor(userId: string) {
 export async function connect(userId: string, id: string, values: Record<string, string> = {}) {
   const def = await connectorById(id);
   if (!def) throw new Error(`unknown connector ${id}`);
-  if (config.hosted && DESKTOP_ONLY.has(id)) throw new Error(`${def.name} reads your own machine, so it runs in the desktop app only`);
+  if (config.hosted && (DESKTOP_ONLY.has(id) || id.startsWith('agent-'))) throw new Error(`${def.name} runs on your own machine, so it's in the desktop app only`);
   if (Object.keys(values).length) saveConnectorConfig(userId, id, values);
   const g = await userGraph(userId);
   const cuid = `connector:${id}`;

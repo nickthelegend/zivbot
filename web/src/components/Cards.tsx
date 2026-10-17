@@ -252,13 +252,14 @@ function GraphCard({ card }: { card: Extract<Card, { type: 'graph' }> }) {
 
 function AgentsCard() {
   const all = useStore((s) => s.connectors);
+  const hostedNote = useStore((s) => (s.hosted ? 'Runs in the desktop app on your own subscription' : 'Not installed on this computer'));
   const connectors = useMemo(() => all.filter((c) => c.id.startsWith('agent-')), [all]);
   return (
     <div className="list-card">
       {connectors.map((c) => (
         <div key={c.id} className="list-item static">
           <AppIcon slug={c.icon} size={26} />
-          <span className="grow"><span className="li-title">{c.name}</span><span className="li-sub">{c.status === 'connected' ? `Installed · ${c.version || ''}` : 'Not installed on this computer'}</span></span>
+          <span className="grow"><span className="li-title">{c.name}</span><span className="li-sub">{c.status === 'connected' ? `Installed · ${c.version || ''}` : hostedNote}</span></span>
           <span className={`tone tone-${c.status === 'connected' ? 'green' : 'gray'}`}>{c.status === 'connected' ? 'ready' : 'missing'}</span>
         </div>
       ))}

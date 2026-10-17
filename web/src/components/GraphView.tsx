@@ -17,7 +17,7 @@ async function askZiv(q: string) {
 const SAMPLES = [
   ['Who knows payments-api', `MATCH (p:Person)<-[:AUTHORED_BY]-(c:Commit)-[:TOUCHES]->(:File)-[:IN_REPO]->(:Repo)-[:IMPLEMENTS]->(:System {name:'payments-api'})\nRETURN p.name AS person, count(DISTINCT c) AS commits ORDER BY commits DESC`],
   ['What breaks if billing-db goes down', `MATCH p = (d:System)-[:DEPENDS_ON*1..4]->(:System {name:'billing-db'})\nRETURN d.name AS system, min(length(p)) AS hops ORDER BY hops`],
-  ['Customers exposed by open P1s', `MATCH (t:Ticket {status:'open', priority:'P1'})-[:AFFECTS]->(s:System)<-[:DEPENDS_ON*0..3]-(:System)<-[:USES]-(o:Org {kind:'customer'})\nRETURN t.key AS ticket, collect(DISTINCT o.name) AS customers, sum(DISTINCT o.arr) AS arr`],
+  ['Customers exposed by open P1s', `MATCH (t:Ticket {status:'open', priority:'P1'})-[:AFFECTS]->(s:System)<-[:DEPENDS_ON*0..3]-(:System)<-[:USES]-(o:Org {kind:'customer'})\nWITH t, collect(DISTINCT o) AS orgs\nRETURN t.key AS ticket, [o IN orgs | o.name] AS customers, reduce(n = 0, o IN orgs | n + o.arr) AS arr`],
   ['Decisions and their sources', `MATCH (d:Decision)-[:SOURCE]->(src)\nOPTIONAL MATCH (d)-[:DECIDED_BY]->(p:Person)\nRETURN d.text AS decision, d.status AS status, p.name AS by, labels(src)[0] AS source`],
   ['Most central people (PageRank)', `MATCH (p:Person) WHERE p.rank IS NOT NULL\nRETURN p.name AS name, p.role AS role, round(p.rank * 1000) / 1000 AS pagerank ORDER BY pagerank DESC LIMIT 8`],
   ['Agent track record', `MATCH (a:Agent)<-[:EXECUTED_BY]-(r:Run)\nRETURN a.name AS agent, count(r) AS runs, count(CASE WHEN r.status = 'succeeded' THEN 1 END) AS wins ORDER BY wins DESC`],
@@ -110,7 +110,7 @@ export function GraphView() {
             <div className="node-detail">
               <div className="nd-head"><span className="chip-dot" style={{ background: labels[selected.label]?.color }} /> {selected.label}<button className="icon-btn" onClick={() => setSelected(null)}><Icon.close size={15} /></button></div>
               <h3>{selected.name}</h3>
-              <div className="nd-body">{detail ? detail.split('\n').slice(1).map((l, i) => <div key={i}>{l.replace(/\*\*/g, '')}</div>) : <span className="spinner sm" />}</div>
+              <div className="nd-body">{detail ? detail.split('\n').slice(1).filter((l) => l.trim()).map((l, i) => <div key={i}>{l.replace(/\*\*/g, '').replace(/^- /, '')}</div>) : <span className="spinner sm" />}</div>
               <div className="nd-actions">
                 <button className="btn ghost sm" onClick={() => set({ entity: selected.id })}>Open</button>
                 {selected.label === 'Person' && <button className="btn ghost sm" onClick={() => void askZiv(`What if ${selected.name} is out next week?`)}>What if they're out?</button>}

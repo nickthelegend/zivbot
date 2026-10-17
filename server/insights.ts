@@ -1,3 +1,4 @@
+import { config } from './config.ts';
 import type { UserGraph } from './graph.ts';
 import { DAY } from './util.ts';
 import { absenceImpact } from './absence.ts';
@@ -273,7 +274,7 @@ async function fleetHealth(g: UserGraph): Promise<InsightSection> {
   );
   const items = rows.map((r): InsightItem => ({
     title: `${r.name}: ${r.wins}/${r.runs} runs succeeded`,
-    detail: r.limitedUntil > Date.now() ? 'Out of quota right now — routing skips it.' : r.installed ? 'Installed and available.' : 'Not installed on this computer.',
+    detail: r.limitedUntil > Date.now() ? 'Out of quota right now — routing skips it.' : config.hosted ? 'Runs in the desktop app on your own subscription.' : r.installed ? 'Installed and available.' : 'Not installed on this computer.',
     uids: [r.uid],
     severity: r.wins < r.runs / 2 ? 'medium' : 'low',
   }));

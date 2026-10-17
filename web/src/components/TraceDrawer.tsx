@@ -33,7 +33,7 @@ export function TraceDrawer() {
               <div className="drawer-meta">
                 <span className="pill-mini">{t.mode === 'graph-planner' ? 'graph planner' : t.mode}</span>
                 {t.delegatedTo?.length > 0 && <span className="pill-mini">delegated to {t.delegatedTo.join(', ')}</span>}
-                <span>{t.queries.length} Cypher queries · {total.toFixed(1)}ms in FalkorDB · {t.nodes.length} nodes used</span>
+                <span>{t.queries.length} Cypher queries · {total.toFixed(1)}ms in FalkorDB · {t.nodes.length} nodes touched by those queries</span>
               </div>
             )}
           </div>

@@ -27,6 +27,16 @@ export async function ensureUser(id?: string) {
   return { id: uid, created: true };
 }
 
+/** Is this id a registered user? Cached, so every request can ask. */
+const known = new Set<string>();
+export async function isUser(id: string) {
+  if (known.has(id)) return true;
+  const hit = await (await registryGraph()).one(`MATCH (u:User {id:$id}) RETURN u.id AS id`, { id }, '~registered?');
+  if (hit) known.add(id);
+  return !!hit;
+}
+export const forgetUser = (id: string) => known.delete(id);
+
 /** Users seen recently, newest first — the background loop only works for people who are around. */
 export async function allUsers(activeWithinMs = 2 * 86_400_000, max = 50): Promise<string[]> {
   const reg = await registryGraph();
@@ -43,6 +53,7 @@ export async function pruneUsers(idleMs = 7 * 86_400_000) {
   for (const id of stale) {
     await (await userGraph(id)).drop().catch(() => {});
     await reg.q(`MATCH (u:User {id:$id}) DELETE u`, { id });
+    forgetUser(id);
   }
   return stale.length;
 }

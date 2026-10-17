@@ -150,14 +150,14 @@ export const tools: Tool[] = [
         { u: n.uid },
         `neighbours of ${n.name}`,
       );
-      const props = Object.entries(node.n).filter(([k]) => !['uid', 'search', 'payload', 'log', '_label', 'aliases', 'emb', 'firstSeen', 'lastSeen', 'community'].includes(k)).map(([k, v]) => `${k}: ${typeof v === 'number' && v > 1e12 ? when(v) : typeof v === 'number' && !Number.isInteger(v) ? v.toFixed(3) : clip(String(v), 160)}`);
+      const props = Object.entries(node.n).filter(([k, v]) => !['uid', 'search', 'payload', 'log', '_label', 'aliases', 'emb', 'firstSeen', 'lastSeen', 'community', 'source', 'external', 'broker', 'first', 'me', 'key', 'name', 'criticality', 'rank', 'cost', 'newsletter', 'important'].includes(k) && v !== '' && v !== null).map(([k, v]) => `${k}: ${typeof v === 'number' && v > 1e12 ? when(v) : typeof v === 'number' && !Number.isInteger(v) ? v.toFixed(3) : clip(String(v), 160)}`);
       const groups = new Map<string, string[]>();
       for (const r of nb) {
         const key = r.out ? `→ ${r.rel}` : `← ${r.rel}`;
         groups.set(key, [...(groups.get(key) || []), `${r.name} (${r.label})`]);
       }
       return {
-        text: `**${n.name}** — ${n.label}\n${props.map((p) => `- ${p}`).join('\n')}\n\nConnections:\n${[...groups].map(([k, v]) => `- ${k}: ${v.slice(0, 8).join(', ')}${v.length > 8 ? ` +${v.length - 8}` : ''}`).join('\n')}`,
+        text: `**${n.name}** — ${n.label}${node.n.rank ? ` · PageRank ${Number(node.n.rank).toFixed(3)}` : ''}${node.n.criticality ? ` · dependency PageRank ${Number(node.n.criticality).toFixed(3)}` : ''}\n${props.map((p) => `- ${p}`).join('\n')}\n\nConnections:\n${[...groups].map(([k, v]) => `- ${k}: ${v.slice(0, 8).join(', ')}${v.length > 8 ? ` +${v.length - 8}` : ''}`).join('\n')}`,
         cards: [{ type: 'graph', title: n.name, focus: [n.uid] }],
         data: { node: node.n, neighbours: nb },
       };
@@ -262,7 +262,6 @@ export const tools: Tool[] = [
         ['projects', 1, `MATCH (x {uid:$u}) MATCH (p:Person)-[:WORKS_ON|OWNS]->(pr:Project) WHERE pr = x OR (pr)-[:USES]->(x) RETURN p.uid AS uid, p.name AS name, count(pr) AS n`],
         ['chat', 1, `MATCH (x {uid:$u})<-[:MENTIONS]-(m:ChatMessage)<-[:POSTED]-(p:Person) RETURN p.uid AS uid, p.name AS name, count(m) AS n`],
         ['GitHub contributions', 1, `MATCH (x {uid:$u}) MATCH (p:Person)-[c:CONTRIBUTES_TO]->(r:Repo) WHERE r = x OR (r)-[:IMPLEMENTS]->(x) RETURN p.uid AS uid, p.name AS name, toInteger(c.commits / 25) + 1 AS n`],
-        ['runs', 1, `MATCH (x {uid:$u})<-[:WORKED_ON]-(r:Run {status:'succeeded'})-[:EXECUTED_BY]->(a:Agent) RETURN a.uid AS uid, a.name AS name, count(r) AS n`],
       ];
       const score = new Map<string, { name: string; score: number; why: string[] }>();
       for (const [how, w, q] of signals) {
@@ -335,13 +334,15 @@ export const tools: Tool[] = [
         `MATCH p = (a {uid:$a})-[*1..4]-(b {uid:$b})
          WHERE none(r IN relationships(p) WHERE type(r) IN ['COLLABORATES','IN_TOUCH','CLOSE_TO','IN_THREAD','BY','USED','WRITTEN_BY'])
            AND none(n IN nodes(p) WHERE n:Episode OR n:Answer OR n:Draft OR n:Conversation)
-         RETURN [n IN nodes(p) | n.name] AS names, [n IN nodes(p) | n.uid] AS uids, [r IN relationships(p) | type(r)] AS rels, length(p) AS hops
+         RETURN [n IN nodes(p) | coalesce(n.name, n.key, n.title)] AS names, [n IN nodes(p) | n.uid] AS uids, [r IN relationships(p) | type(r)] AS rels,
+                [i IN range(0, length(p) - 1) | startNode(relationships(p)[i]) = nodes(p)[i]] AS fwd, length(p) AS hops
          ORDER BY hops LIMIT 3`,
         { a: a.uid, b: b.uid },
         `paths ${a.name} ↔ ${b.name}`,
       );
       if (!rows.length) return { text: `No path within 4 hops between ${a.name} and ${b.name}.` };
-      const fmt = (r: Row) => r.names.map((n: string, i: number) => (i < r.rels.length ? `${n} —${r.rels[i]}→ ` : n)).join('');
+      // arrows follow the stored edge direction: "LUM-139 —FOR→ Brightwave", not the walk order
+      const fmt = (r: Row) => r.names.map((n: string, i: number) => (i < r.rels.length ? `${n} ${r.fwd[i] ? `—${r.rels[i]}→` : `←${r.rels[i]}—`} ` : n)).join('');
       return {
         text: `**${a.name}** ↔ **${b.name}**\n${rows.map((r) => `- ${fmt(r)}`).join('\n')}`,
         cards: [{ type: 'graph', title: `${a.name} ↔ ${b.name}`, focus: [...new Set(rows.flatMap((r) => r.uids as string[]))] }],
@@ -664,8 +665,8 @@ export const tools: Tool[] = [
 
   {
     name: 'insights',
-    description: 'Graph-wide risk and health check: bus factor on critical systems, single points of failure (betweenness on DEPENDS_ON), who is overloaded, who is waiting on me, working groups (label propagation), what changed in the last 24h, agent fleet record.',
-    params: { type: 'object', properties: { focus: { type: 'string', description: 'optional: bus | spof | waiting | load | groups | changed | fleet' } } },
+    description: 'Graph-wide risk and health check: customers at risk, blocked work, bus factor on critical systems, single points of failure (multi-hop DEPENDS_ON + dependency PageRank), who we can\'t lose, who is overloaded, who is waiting on me, working groups (label propagation), what changed in the last 24h, agent fleet record.',
+    params: { type: 'object', properties: { focus: { type: 'string', description: 'optional: customers | blocked | bus | spof | absence | waiting | stale | load | dups | groups | changed | fleet' } } },
     async run({ g }, { focus }) {
       const all = await insights(g);
       const secs = focus ? all.filter((s) => s.key === focus) : all;
@@ -749,7 +750,7 @@ export const tools: Tool[] = [
         'tickets → systems → implementing repo',
       );
       const repo = ctx.flatMap((c) => c.repos).find((r: any) => r.path);
-      if (!repo) return { text: `None of these tickets touch a repo on this computer yet. Connect the repo in Connectors → GitHub first.` };
+      if (!repo) return { text: `None of these tickets touch a repo I can work in yet. Connect the repo in Connectors → GitHub first.` };
       const systems = [...new Set(ctx.flatMap((c) => c.systems as string[]))];
       const diag = await g.q(
         `MATCH (m)-[:MENTIONS]->(x) WHERE x.uid IN $targets AND (m:ChatMessage OR m:Email) AND m.at > $since
@@ -881,7 +882,7 @@ export const tools: Tool[] = [
           type: 'options', question: 'Want me to start the handoff?',
           options: [
             ...handoff.slice(0, 2).map((t, i) => ({ key: String.fromCharCode(65 + i), label: `Move ${t.key} to ${t.next!.name}`, value: `Reassign ${t.key}` })),
-            ...(a.orphaned[0] ? [{ key: String.fromCharCode(65 + Math.min(handoff.length, 2)), label: `Who else could learn ${a.orphaned[0].name}?`, value: `Who knows ${a.orphaned[0].name}?` }] : []),
+            ...(a.orphaned[0] ? [{ key: String.fromCharCode(65 + Math.min(handoff.length, 2)), label: `Who else could learn ${a.orphaned[0].name}?`, value: `Who else could learn ${a.orphaned[0].name}?` }] : []),
           ],
         });
       }
@@ -1042,6 +1043,126 @@ export const tools: Tool[] = [
           ] },
         ],
         data: { system: sys, causes, reports },
+      };
+    },
+  },
+
+  {
+    name: 'workload',
+    description: "How loaded a person is, from the graph: open tickets (with priority), meetings in the next 7 days, decisions waiting on them, threads they owe a reply on, and systems only they know. Without a person, ranks everyone by load.",
+    params: { type: 'object', properties: { person: { type: 'string', description: 'optional' } } },
+    async run({ g }, { person }) {
+      const now = Date.now();
+      const rows = await g.q(
+        `MATCH (p:Person) WHERE NOT coalesce(p.external, false) AND NOT coalesce(p.me, false) AND ($u = '' OR p.uid = $u)
+         OPTIONAL MATCH (p)<-[:ASSIGNED_TO]-(t:Ticket {status:'open'})
+         WITH p, collect(DISTINCT t.key + ' ' + coalesce(t.priority, '')) AS tickets, sum(CASE t.priority WHEN 'P1' THEN 3 WHEN 'P2' THEN 2 ELSE 1 END) AS tw
+         OPTIONAL MATCH (p)-[:ATTENDS]->(e:Event) WHERE e.start > $now AND e.start < $week
+         WITH p, tickets, tw, count(DISTINCT e) AS meetings
+         OPTIONAL MATCH (d:Decision {status:'pending'})-[:AWAITS]->(p)
+         RETURN p.uid AS uid, p.name AS name, p.role AS role, tickets, tw, meetings, count(DISTINCT d) AS decisions`,
+        { u: '', now, week: now + 7 * DAY, ...(person ? { u: (await resolve(g, person, ['Person']))?.uid || '__none__' } : {}) },
+        person ? `workload of ${person}` : 'workload of everyone',
+      );
+      if (!rows.length) return { text: `I couldn't find ${person || 'anyone'} in the graph.` };
+      const scored = rows.map((r) => ({ ...r, load: 2 * r.tw + r.meetings + 2 * r.decisions })).sort((a, b) => b.load - a.load);
+      const avg = scored.reduce((n, r) => n + r.load, 0) / Math.max(1, scored.length);
+      const line = (r: any) => `**${r.name}**${r.role ? ` (${r.role})` : ''} — ${r.tickets.length ? `${r.tickets.length} open ticket${r.tickets.length > 1 ? 's' : ''} (${r.tickets.join(', ')})` : 'no open tickets'}, ${r.meetings} meeting${r.meetings === 1 ? '' : 's'} this week${r.decisions ? `, ${r.decisions} decision${r.decisions > 1 ? 's' : ''} waiting on them` : ''}`;
+      if (person) {
+        const r = scored[0];
+        const everyone = (await toolByName('workload')!.run({ g } as any, {})).data as any[];
+        const teamAvg = everyone.reduce((n, x) => n + x.load, 0) / Math.max(1, everyone.length);
+        const a = await absenceImpact(g, r.uid);
+        const verdict = r.load > teamAvg * 1.6 && r.load >= 6 ? 'Yes — well above the team' : r.load > teamAvg ? 'A bit above the team' : 'No — at or below the team';
+        return {
+          text: `${verdict} (load ${r.load} vs team average ${teamAvg.toFixed(1)}).\n${line(r)}.${a?.orphaned.length ? `\nThey are also the only person who knows ${a.orphaned.map((s) => s.name).join(', ')}.` : ''}`,
+          cards: [{ type: 'graph', title: `${r.name}'s load`, focus: [r.uid] }],
+          data: scored,
+        };
+      }
+      return {
+        text: `Busiest first (open tickets weighted by priority, meetings this week, decisions waiting):\n${scored.slice(0, 6).map((r, i) => `${i + 1}. ${line(r)}`).join('\n')}\n\nTeam average load: ${avg.toFixed(1)}.`,
+        cards: [{ type: 'graph', title: 'Who is carrying what', focus: scored.slice(0, 5).map((r) => r.uid) }],
+        data: scored,
+      };
+    },
+  },
+
+  {
+    name: 'recent_from',
+    description: 'What a person (or a customer) said recently: their emails and chat messages, newest first, with what each one is about.',
+    params: { type: 'object', properties: { who: { type: 'string' }, days: { type: 'number' } }, required: ['who'] },
+    async run({ g }, { who, days = 30 }) {
+      const x = await resolve(g, who, ['Person', 'Org']);
+      if (!x) return { text: `I couldn't find "${who}".` };
+      const rows = await g.q(
+        `MATCH (p:Person) WHERE p.uid = $u OR (p)-[:WORKS_AT]->(:Org {uid:$u})
+         MATCH (p)<-[:FROM]-(m:Email) WHERE m.at > $since
+         OPTIONAL MATCH (m)-[:MENTIONS]->(a) WHERE a:Ticket OR a:Project OR a:System
+         RETURN m.uid AS uid, p.name AS who, m.subject AS title, m.body AS body, m.at AS at, collect(DISTINCT a.name) AS about
+         UNION ALL
+         MATCH (p:Person) WHERE p.uid = $u OR (p)-[:WORKS_AT]->(:Org {uid:$u})
+         MATCH (p)-[:POSTED]->(m:ChatMessage) WHERE m.at > $since
+         OPTIONAL MATCH (m)-[:MENTIONS]->(a) WHERE a:Ticket OR a:Project OR a:System
+         RETURN m.uid AS uid, p.name AS who, '#chat' AS title, coalesce(m.text, m.name) AS body, m.at AS at, collect(DISTINCT a.name) AS about`,
+        { u: x.uid, since: Date.now() - days * DAY },
+        `what ${x.name} said (mail + chat)`,
+      );
+      rows.sort((a, b) => b.at - a.at);
+      if (!rows.length) return { text: `Nothing from ${x.name} in the last ${days} days.` };
+      return {
+        text: `What **${x.name}** said lately:\n${rows.slice(0, 6).map((r) => `- ${ago(r.at)}${r.who !== x.name ? ` (${r.who})` : ''}${r.title === '#chat' ? ' in chat' : ` — "${r.title}"`}: ${clip(String(r.body).replace(/\s+/g, ' '), 140)}${r.about.length ? ` _(${r.about.join(', ')})_` : ''}`).join('\n')}`,
+        cards: [{ type: 'graph', title: `From ${x.name}`, focus: [x.uid, ...rows.slice(0, 6).map((r) => r.uid)] }],
+        data: rows,
+      };
+    },
+  },
+
+  {
+    name: 'who_could_learn',
+    description: 'Who could become the second person on a system: colleagues who already work on projects that use it, touch the systems next to it (DEPENDS_ON either way), and work closely with the current knowers — ranked, excluding the people who already know it.',
+    params: { type: 'object', properties: { system: { type: 'string' } }, required: ['system'] },
+    async run({ g }, { system }) {
+      const s = await resolve(g, system, ['System']);
+      if (!s) return { text: `I couldn't find a system called "${system}".` };
+      const knowers = (await g.q(
+        `MATCH (s:System {uid:$u})
+         OPTIONAL MATCH (a:Person)<-[:AUTHORED_BY]-(:Commit)-[:TOUCHES]->(:File)-[:IN_REPO]->(:Repo)-[:IMPLEMENTS]->(s)
+         WITH s, collect(DISTINCT a.uid) AS k1
+         OPTIONAL MATCH (s)<-[:ABOUT]-(:Doc)<-[:OWNS]-(b:Person)
+         WITH s, k1, collect(DISTINCT b.uid) AS k2
+         OPTIONAL MATCH (s)<-[:AFFECTS]-(:Ticket)-[:ASSIGNED_TO]->(c:Person)
+         WITH k1, k2, collect(DISTINCT c.uid) AS k3
+         RETURN k1 + k2 + k3 AS k`,
+        { u: s.uid },
+        `who knows ${s.name} today`,
+      ))[0]?.k.filter(Boolean) || [];
+      const rows = await g.q(
+        `MATCH (p:Person) WHERE NOT coalesce(p.external, false) AND NOT coalesce(p.me, false) AND NOT p.uid IN $known
+         OPTIONAL MATCH (p)-[:WORKS_ON|OWNS]->(:Project)-[:USES]->(:System {uid:$u})
+         WITH p, count(*) AS onProject
+         OPTIONAL MATCH (p)<-[:ASSIGNED_TO]-(:Ticket)-[:AFFECTS]->(n:System)-[:DEPENDS_ON]-(:System {uid:$u})
+         WITH p, onProject, count(DISTINCT n) AS neighbours
+         OPTIONAL MATCH (p)-[c:CLOSE_TO]-(k:Person) WHERE k.uid IN $known
+         WITH p, onProject, neighbours, collect(DISTINCT k.name) AS closeTo
+         OPTIONAL MATCH (p)<-[:ASSIGNED_TO]-(o:Ticket {status:'open'})
+         RETURN p.uid AS uid, p.name AS name, p.role AS role, onProject, neighbours, closeTo, count(DISTINCT o) AS load`,
+        { u: s.uid, known: knowers },
+        `who is one step from ${s.name}: projects on it, neighbouring systems, close to its knowers`,
+      );
+      const names = new Map((await g.q(`UNWIND $k AS u MATCH (p:Person {uid:u}) RETURN p.uid AS uid, p.name AS name`, { k: knowers }, '~knower names')).map((r) => [r.uid, r.name]));
+      const scored = rows
+        .map((r) => ({ ...r, onProject: r.onProject > 0 ? 1 : 0 }))
+        .map((r) => ({ ...r, score: 3 * r.onProject + 2 * r.neighbours + 2 * r.closeTo.length - r.load }))
+        .filter((r) => r.onProject || r.neighbours || r.closeTo.length)
+        .sort((a, b) => b.score - a.score);
+      const known = [...names.values()];
+      if (!scored.length) return { text: `Nobody is one step from **${s.name}** yet${known.length ? ` — only ${known.join(', ')} know${known.length === 1 ? 's' : ''} it` : ''}.` };
+      const why = (r: any) => [r.onProject && 'on a project that uses it', r.neighbours && `works on ${r.neighbours} neighbouring system${r.neighbours > 1 ? 's' : ''}`, r.closeTo.length && `works closely with ${r.closeTo.join(', ')}`, `${r.load} open ticket${r.load === 1 ? '' : 's'}`].filter(Boolean).join(' · ');
+      return {
+        text: `**${s.name}** is known by ${known.join(', ') || 'nobody'} today. Best second person:\n${scored.slice(0, 4).map((r, i) => `${i + 1}. **${r.name}**${r.role ? ` (${r.role})` : ''} — ${why(r)}`).join('\n')}${known[0] ? `\n\nPair ${scored[0].name} with ${known[0]} on the next ${s.name} ticket.` : ''}`,
+        cards: [{ type: 'graph', title: `Who could learn ${s.name}`, focus: [s.uid, ...knowers, ...scored.slice(0, 3).map((r) => r.uid)], exact: true }],
+        data: { knowers, candidates: scored },
       };
     },
   },

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { api, type Connector } from '../api';
+import { api, API_BASE, userId, type Connector } from '../api';
 import { useStore, set, toast, loadConnectors } from '../store';
 import { AppIcon, Icon } from './icons';
 
@@ -44,6 +44,7 @@ export function ConnectModal() {
           </div>
         </div>
         <div className="modal-body">
+          {cat === 'All' && !q && <McpBox />}
           {groups.filter(([, list]) => list.length).map(([title, list]) => (
             <section key={title}>
               <div className="sec-head"><h3>{title}</h3>{cat === 'All' && !q && title !== 'Recommended for you' && <button className="link-btn" onClick={() => setCat(title)}>View all</button>}</div>
@@ -57,6 +58,22 @@ export function ConnectModal() {
         </div>
       </div>
     </div>
+  );
+}
+
+/** Your graph's tools, from any MCP client — the same ones the dots use. */
+function McpBox() {
+  const url = `${API_BASE || location.origin}/mcp?user=${userId}`;
+  const cmd = `claude mcp add --transport http zivbot "${url}"`;
+  return (
+    <section className="mcp-box">
+      <div className="grow">
+        <h3><Icon.bolt size={14} /> Use your graph from any agent (MCP)</h3>
+        <small>28 graph tools — blast radius, critical path, diagnose, what-if, PageRank and more — with the Cypher behind every answer. Works in Claude Code, Codex, Cursor and Claude Desktop.</small>
+        <code className="mcp-cmd">{cmd}</code>
+      </div>
+      <button className="btn ghost sm" onClick={() => void navigator.clipboard.writeText(cmd).then(() => toast('Copied'))}>Copy</button>
+    </section>
   );
 }
 
@@ -85,7 +102,9 @@ function AppRow({ c, open, onToggle }: { c: Connector; open: boolean; onToggle: 
           <div className="app-name">{c.name}{c.auth === 'demo' && <span className="pill-mini">demo</span>}{c.auth === 'key' && !connected && <span className="pill-mini key">key</span>}</div>
           <div className="app-desc">{progress && c.status === 'syncing' ? progress : c.error && c.status !== 'connected' ? c.error : connected && c.counts ? Object.entries(c.counts).slice(0, 4).map(([k, v]) => `${v} ${k}`).join(' · ') : c.description}</div>
         </div>
-        {connected ? (
+        {c.status === 'desktop only' ? (
+          <span className="desktop-only" title="Runs on your own machine">Desktop app</span>
+        ) : connected ? (
           <button className="added" onClick={needsInput ? onToggle : undefined}><Icon.check size={14} /> {label}</button>
         ) : (
           <button className="btn add" disabled={busy || c.status === 'syncing'} onClick={() => (needsInput && !open ? onToggle() : void go())}>{label}</button>

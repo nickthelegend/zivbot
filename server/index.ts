@@ -8,7 +8,9 @@ import { fileURLToPath } from 'node:url';
 import { config, llmEnabled } from './config.ts';
 import { falkor, userGraph, listGraphs } from './graph.ts';
 import { subscribe, publish } from './bus.ts';
-import { ensureUser, ensureTeam } from './users.ts';
+import { ensureUser, ensureTeam, isUser } from './users.ts';
+import { buildMcp } from './mcpServer.ts';
+import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 import { handleUserMessage, afterConnect } from './agent.ts';
 import { listDots, listConversations, history, createDot, createGroup, updateDot, markRead, getConversation, DOT_PRESETS, postMessage } from './memory.ts';
 import { catalogFor, connect, disconnect } from './connectors/index.ts';
@@ -61,6 +63,15 @@ app.onError((e, c) => {
   return c.json({ error: e.message }, (e as any).status || 500);
 });
 
+// Every user-scoped call must name a registered user: an unknown id never gets a graph made for it.
+app.use('/api/*', async (c, next) => {
+  const p = c.req.path;
+  if (c.req.method === 'OPTIONS' || p === '/api/health' || p === '/api/session') return next();
+  const id = c.req.header('x-ziv-user') || c.req.query('user');
+  if (!id || !/^[a-zA-Z0-9_-]{6,64}$/.test(id) || !(await isUser(id))) return c.json({ error: 'unknown user — start a session first' }, 401);
+  return next();
+});
+
 // ------------------------------------------------------------------ session & state
 
 app.get('/api/health', async (c) => {
@@ -71,8 +82,10 @@ app.get('/api/health', async (c) => {
 
 app.post('/api/session', async (c) => {
   const body = await c.req.json().catch(() => ({}));
-  // new graphs cost real work: cap how fast one address (and everyone together) can create them
-  if (config.hosted && !body.userId) { limit(`session:${ip(c)}`, 8, 3_600_000); limit('session:all', 300, 3_600_000); }
+  // new graphs cost real work: cap how fast one address (and everyone together) can create them,
+  // whether or not the client suggested an id
+  const valid = typeof body.userId === 'string' && /^[a-zA-Z0-9_-]{6,64}$/.test(body.userId);
+  if (config.hosted && !(valid && (await isUser(body.userId)))) { limit(`session:${ip(c)}`, 8, 3_600_000); limit('session:all', 300, 3_600_000); }
   return c.json(await ensureUser(body.userId));
 });
 
@@ -375,6 +388,21 @@ app.post('/api/cypher', async (c) => {
 app.post('/api/scan', async (c) => {
   await scanUser(user(c), true);
   return c.json({ ok: true });
+});
+
+// ------------------------------------------------------------------ MCP over HTTP
+
+// Any MCP client (Claude Code, Codex, Cursor, Claude Desktop…) can use a user's graph tools:
+//   claude mcp add --transport http zivbot "https://<api>/mcp?user=<your id>"
+// Stateless: a fresh server + transport per request, scoped to that user's graph.
+app.all('/mcp', async (c) => {
+  const id = c.req.query('user') || c.req.header('x-ziv-user') || (c.req.header('authorization') || '').replace(/^Bearer\s+/i, '');
+  if (!id || !/^[a-zA-Z0-9_-]{6,64}$/.test(id) || !(await isUser(id))) return c.json({ error: 'pass ?user=<your ZivBot id> (Profile → MCP)' }, 401);
+  if (config.hosted) limit(`mcp:${id}`, 60, 60_000);
+  const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
+  const server = await buildMcp(id);
+  await server.connect(transport);
+  return transport.handleRequest(c.req.raw);
 });
 
 // ------------------------------------------------------------------ web app

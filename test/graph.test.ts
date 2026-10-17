@@ -259,3 +259,17 @@ test('customer health: Brightwave is at risk, with reasons from tickets, threads
   assert.equal(bw.next.ask, 'Draft a reply to Kate Morgan');
   assert.ok(rows.find((r) => r.name === 'Kestrel Homes').risk < bw.risk);
 });
+
+test('diagnose: a slow checkout-web walks DEPENDS_ON upstream to the P1 on payments-api', async () => {
+  const d = (await run('diagnose', { system: 'checkout-web' })).data as any;
+  assert.equal(d.causes[0].key, 'LUM-142');
+  assert.equal(d.causes[0].hops, 1);
+  assert.deepEqual(d.causes[0].route, ['checkout-web', 'payments-api']);
+});
+
+test('who could learn: a second person for a system only one person knows, never the knower', async () => {
+  const d = (await run('who_could_learn', { system: 'ota-server' })).data as any;
+  assert.ok(d.knowers.includes('person:hana'));
+  assert.ok(d.candidates.length > 0);
+  assert.ok(!d.candidates.some((c: any) => d.knowers.includes(c.uid)));
+});

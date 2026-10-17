@@ -152,6 +152,34 @@ export async function plan(ctx: Ctx, input: string, opts: PlanOpts = {}): Promis
     return done(await writeBrief(ctx, call, ents[0]));
   }
 
+  // ---- people's load: "is Raj overloaded?", "who is the busiest engineer?"
+  if (/\b(overloaded|over ?loaded|stretched|swamped|too much on|workload|how busy|busiest|most loaded|capacity|bandwidth)\b/.test(low)) {
+    const p = first('Person');
+    if (p || /busiest|most loaded|who (has|is)|everyone|team/.test(low)) return done((await call('workload', p ? { person: p.uid } : {})).text);
+  }
+
+  // ---- who is waiting on me
+  if (/\b(waiting (on|for) (me|us|a reply)|who('s| is) waiting|owe (a )?repl|unanswered|chasing me|who needs (an? )?(answer|reply))\b/.test(low)) {
+    return done((await call('insights', { focus: 'waiting' })).text);
+  }
+
+  // ---- what someone said: "what did Kate say last week?", "latest from Brightwave"
+  if (/\b(what (did|has|have) .+ (say|said|write|written|wrote|send|sent|ask|asked)|what('s| is| has) .+ (been )?saying|latest from|last (message|email) from|heard from)\b/.test(low)) {
+    const w = first('Person', 'Org');
+    if (w) return done((await call('recent_from', { who: w.uid, days: /week/.test(low) ? 10 : 30 })).text);
+  }
+
+  // ---- a second person on a system: "who else could learn ota-server?"
+  if (/\b(who (else )?(could|should|can) (learn|pick up|back ?up|cover)|second person|backup for|bus factor of|spread (the )?knowledge)\b/.test(low)) {
+    const sys = first('System');
+    if (sys) return done((await call('who_could_learn', { system: sys.uid })).text);
+  }
+
+  // ---- money on a system: "how much revenue rides on checkout-web?"
+  if (/\b(revenue|arr|money|dollars|how much)\b/.test(low) && first('System')) {
+    return done((await call('blast_radius', { ref: first('System')!.uid })).text);
+  }
+
   // ---- customer health: "which customers are at risk?", "how are our customers doing?"
   if (/\b(customers?|accounts?|clients?)\b.*\b(at risk|risk|health|healthy|churn|happy|unhappy|doing|okay|ok)\b|\b(churn risk|account health|customer health)\b/.test(low) && !first('Org')) {
     return done((await call('customer_health')).text);
@@ -322,6 +350,15 @@ export async function plan(ctx: Ctx, input: string, opts: PlanOpts = {}): Promis
   if (/^(anything|has anyone|did anyone|what('s| is| has) (the team|everyone|anyone) (said|saying)|any (mention|talk|news))|\b(similar to|related to|reminds)\b/.test(low) || (!ents.length && t.split(/\s+/).length > 3)) {
     const r = await call('semantic_search', { query: t });
     if ((r.data as any)?.hits?.length) return done(r.text);
+    // nothing close by meaning: tell the story of what they named, or try the words themselves
+    if (ents[0]) return done((await call('timeline', { ref: ents[0].uid })).text);
+    // only things with names worth opening, and only real matches
+    const words = (await search(ctx.g, t.replace(/\b(anything|about|the|a|an|is|are|what|who|any|has|have|on|of|for|did|do|does|our|we|my|last|this|week|plan)\b/gi, ' '), ['Doc', 'Ticket', 'Project', 'System', 'Decision', 'Org', 'Person', 'Team'], 6)).filter((h: Row) => h.score >= 1);
+    used.push('search_graph');
+    if (words.length) {
+      cards.push({ type: 'options', question: 'Ask about one of these', options: words.slice(0, 4).map((h: Row, i: number) => ({ key: String.fromCharCode(65 + i), label: `${h.label}: ${String(h.name).slice(0, 48)}`, value: `Tell me about ${h.name}` })) });
+      return done(`Nothing matches that closely, but these mention the same words:\n${words.map((h: Row) => `- ${h.label} **${h.name}**`).join('\n')}`);
+    }
     return done(fallback(cards));
   }
 
@@ -356,13 +393,13 @@ export async function triageReply(ctx: Ctx, call: (n: string, a?: any) => Promis
   const r = await call('triage');
   const d = r.data as any;
   const opts: { key: string; label: string; value: string }[] = [];
-  // Only offer fixes the fleet can actually do: tickets on a system whose repo is on this computer.
+  // Only offer fixes the fleet can actually do: tickets on a system whose repo is connected.
   const fixable = await ctx.g.q(
     `MATCH (t:Ticket {status:'open'})-[:AFFECTS]->(:System)<-[:IMPLEMENTS]-(r:Repo) WHERE r.path IS NOT NULL
      OPTIONAL MATCH (t)-[:FOR]->(o:Org)
      RETURN DISTINCT t.key AS key, t.priority AS p, coalesce(o.arr, 0) AS arr ORDER BY p, arr DESC LIMIT 2`,
     {},
-    'tickets my coding agents can fix (repo on this computer)',
+    'tickets my coding agents can fix (repo connected)',
   );
   const tick = fixable.map((i: any) => i.key);
   if (tick.length) opts.push({ key: '', label: `Fix ${tick.join(' + ')} with my coding agents`, value: `Fix ${tick.join(' and ')}` });

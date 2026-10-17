@@ -34,7 +34,7 @@ The questions a chief of staff gets are never about one record:
 | *Why did we move to Stripe?* | Decision → DECIDED_BY / APPROVED_BY → Person; Decision → SOURCE → Slack message + Notion RFC |
 | *Which agent should fix this?* | Agent ← EXECUTED_BY ← Run → WORKED_ON → System (and its neighbours), quota state, Procedure → PREFERS → Agent |
 | *Anything about the portal being slow?* | vector search over `:Memorable(emb)` → one hop to the tickets, people and customers each hit is about |
-| *What's risky?* | `algo.betweenness` over DEPENDS_ON, `DEPENDS_ON*1..5` dependents + customer ARR, knowledge share per critical system |
+| *What's risky?* | `DEPENDS_ON*1..5` dependents + customer ARR, dependency PageRank (`algo.pageRank` over DEPENDS_ON), knowledge share per critical system |
 
 The graph does real work in ZivBot (hackathon rule 3). Everything lives in FalkorDB and nowhere else:
 
@@ -67,7 +67,7 @@ Take FalkorDB away and nothing works.
 6. **Semantic memory (GraphRAG).** Every message, mail, doc, ticket and decision gets a vector in **one FalkorDB vector index**. Fuzzy questions run a vector search, then follow the graph from each hit to what it's about.
 7. **Insights.** One tab shows:
    - knowledge risk (bus factor on critical systems)
-   - single points of failure (`algo.betweenness` over `DEPENDS_ON` plus the ARR riding on them)
+   - single points of failure (multi-hop `DEPENDS_ON` dependents, dependency PageRank, and the ARR riding on them)
    - who's waiting on you
    - who's overloaded
    - working groups (label propagation)
@@ -298,9 +298,11 @@ WHERE t.priority IN ['P1','P2'] AND NOT (t)-[:FOR]->(:Org {uid:$o})
 RETURN t.key, t.priority, collect(DISTINCT s.name)[0] AS via
 ```
 
-**Single points of failure:**
+**Single points of failure** (ranked with dependency PageRank, set in `analytics.ts`):
 ```cypher
-CALL algo.betweenness({nodeLabels: ['System'], relationshipTypes: ['DEPENDS_ON']}) YIELD node, score
+CALL algo.pageRank('System', 'DEPENDS_ON') YIELD node, score SET node.criticality = score
+```
+```cypher
 MATCH (s:System) OPTIONAL MATCH (d:System)-[:DEPENDS_ON*1..5]->(s)
 WITH s, collect(DISTINCT d) AS deps UNWIND [s] + deps AS x
 OPTIONAL MATCH (o:Org {kind:'customer'})-[:USES]->(x)
@@ -354,6 +356,15 @@ MATCH (s)<-[:DEPENDS_ON*0..3]-(:System)<-[:USES]-(o:Org {kind: 'customer'})
 WITH t, collect(DISTINCT o.name) AS customers, sum(DISTINCT o.arr) AS arr
 RETURN t.uid, t.key, customers, arr
 // then: MERGE (r:Rule {uid:$rule})-[f:FIRED_ON]->(t) so it never fires twice
+```
+
+**Working groups — label propagation over strong ties only:**
+```cypher
+MATCH (a:Person)-[c:COLLABORATES]->(b:Person) WHERE c.weight >= 2 MERGE (a)-[:CLOSE_TO {weight: c.weight}]->(b)
+```
+```cypher
+CALL algo.labelPropagation({nodeLabels: ['Person'], relationshipTypes: ['CLOSE_TO']}) YIELD node, communityId
+SET node.community = communityId
 ```
 
 **Same person in two apps (shared 2-hop working context):**
@@ -455,7 +466,15 @@ node scripts/e2e.mjs
 ZIV_USER=<your id> npm run mcp
 ```
 
-Add it to any MCP client. For example, Claude Code: `claude mcp add zivbot -- npx tsx /path/to/zivbot/server/mcp.ts`. You get `triage`, `who_knows`, `blast_radius`, `decision_trace`, `connection_path`, `recall`, `run_cypher` and more, and each answer ends with the Cypher behind it.
+Add it to any MCP client. For example, Claude Code: `claude mcp add zivbot -- npx tsx /path/to/zivbot/server/mcp.ts`.
+
+The same 28 tools are also served over **Streamable HTTP**, including on the live demo. Copy your command from **Connect apps → Use your graph from any agent**:
+
+```bash
+claude mcp add --transport http zivbot "https://zivbot-api-production.up.railway.app/mcp?user=<your id>"
+```
+
+You get `triage`, `critical_path`, `diagnose`, `blast_radius`, `what_if_absent`, `customer_health`, `who_knows`, `run_algorithm`, `semantic_search`, `run_cypher` and more. The agent picks the tool, and each answer ends with the Cypher behind it.
 
 ### Desktop
 

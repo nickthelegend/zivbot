@@ -72,10 +72,15 @@ export async function loadDictionary(g: UserGraph): Promise<Dictionary> {
     const esc = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     dict.push({ term, uid, re: new RegExp(`(^|[^\\w-])${esc}(?![\\w-])`, 'i') });
   };
+  // a person's first name works as a mention when nobody else shares it ("Kate" = Kate Morgan)
+  const firsts = new Map<string, number>();
+  const firstOf = (r: Record<string, any>) => (r.label === 'Person' ? r.first || (/\s/.test(r.name || '') ? String(r.name).split(/\s+/)[0] : null) : null);
+  for (const r of rows) { const f = firstOf(r)?.toLowerCase(); if (f) firsts.set(f, (firsts.get(f) || 0) + 1); }
   for (const r of rows) {
     add(r.name, r.uid);
     if (r.label === 'Ticket') add(r.key, r.uid);
-    if (r.first) add(r.first, r.uid);
+    const f = firstOf(r);
+    if (f && (r.first || firsts.get(f.toLowerCase()) === 1)) add(f, r.uid);
     for (const a of (r.aliases as string[] | null) || []) add(a, r.uid);
   }
   // Longer terms first so "payments-api" wins over "payments".
