@@ -5,7 +5,7 @@
  * pairing (QR), notifications and haptics.
  */
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, BackHandler, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, BackHandler, Image, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { CameraView, useCameraPermissions } from 'expo-camera';
@@ -15,18 +15,14 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { WebView, type WebViewMessageEvent } from 'react-native-webview';
 
 const KEY = 'zivbot.pairUrl';
-const C = { bg: '#141414', panel: '#1f1f1f', line: '#2e2e2e', text: '#ececec', muted: '#8c8c8c', accent: '#ff7a1a' };
+const C = { bg: '#100f0e', panel: '#1a1817', line: '#383029', text: '#f3eee9', muted: '#8f857b', accent: '#ff7a1a' };
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({ shouldShowAlert: true, shouldPlaySound: false, shouldSetBadge: false }),
 });
 
 function Dot({ size = 72 }: { size?: number }) {
-  return (
-    <View style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: C.accent, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: size * 0.12 }}>
-      {[0, 1].map((i) => <View key={i} style={{ width: size * 0.15, height: size * 0.26, borderRadius: size, backgroundColor: C.bg }} />)}
-    </View>
-  );
+  return <Image source={require('./assets/ziv.png')} style={{ width: size * 1.3, height: size * 1.3 }} resizeMode="contain" />;
 }
 
 /** Accepts "http://192.168.1.4:8787/?pair=abc" (from the QR) or just "192.168.1.4:8787". */
@@ -165,7 +161,7 @@ const s = StyleSheet.create({
   input: { flex: 1, backgroundColor: C.panel, borderColor: C.line, borderWidth: 1, borderRadius: 14, color: C.text, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14 },
   btn: { backgroundColor: C.panel, borderColor: C.line, borderWidth: 1, borderRadius: 14, paddingHorizontal: 18, justifyContent: 'center', minHeight: 46 },
   btnText: { color: C.text, fontWeight: '600' },
-  btnPrimary: { backgroundColor: '#f4f4f4', borderRadius: 24, paddingHorizontal: 28, paddingVertical: 14, alignSelf: 'stretch', alignItems: 'center' },
-  btnPrimaryText: { color: '#111', fontWeight: '700', fontSize: 16 },
+  btnPrimary: { backgroundColor: '#ff7a1a', borderRadius: 24, paddingHorizontal: 28, paddingVertical: 14, alignSelf: 'stretch', alignItems: 'center' },
+  btnPrimaryText: { color: '#fff', fontWeight: '700', fontSize: 16 },
   err: { color: '#f87171', textAlign: 'center' },
 });

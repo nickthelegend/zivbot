@@ -6,9 +6,9 @@
     "scheme": "zivbot",
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
-    "backgroundColor": "#141414",
+    "backgroundColor": "#100f0e",
     "icon": "./assets/icon.png",
-    "splash": { "image": "./assets/splash.png", "resizeMode": "contain", "backgroundColor": "#141414" },
+    "splash": { "image": "./assets/splash.png", "resizeMode": "contain", "backgroundColor": "#100f0e" },
     "ios": {
       "bundleIdentifier": "dev.zivbot.app",
       "supportsTablet": false,
@@ -20,7 +20,7 @@
     },
     "android": {
       "package": "dev.zivbot.app",
-      "adaptiveIcon": { "foregroundImage": "./assets/adaptive-icon.png", "backgroundColor": "#141414" },
+      "adaptiveIcon": { "foregroundImage": "./assets/adaptive-icon.png", "backgroundColor": "#100f0e" },
       "permissions": ["android.permission.CAMERA", "android.permission.POST_NOTIFICATIONS", "android.permission.INTERNET", "android.permission.RECORD_AUDIO"],
       "usesCleartextTraffic": true
     },

@@ -1,3 +1,5 @@
+<p align="center"><img src="docs/hero.jpg" alt="ZivBot — dots that act on your graph" width="100%"></p>
+
 # ZivBot
 
 **Agent-native dots on a FalkorDB graph.** Connect your apps *and your AI subscriptions* (Codex, Claude Code, Cursor, OpenCode, Grok, Antigravity). ZivBot maps all of it into one graph per user. Its personal agents, the **dots**, use that graph to decide what matters, talk to each other, and act through the right coding agent. Every answer comes with the Cypher path behind it.
