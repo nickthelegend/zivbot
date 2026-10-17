@@ -14,10 +14,11 @@ import { listDots, listConversations, history, createDot, createGroup, updateDot
 import { catalogFor, connect, disconnect } from './connectors/index.ts';
 import { approveDraft, rejectDraft } from './actions.ts';
 import { routeJob, syncFleet } from './fleet.ts';
-import { toolByName, search as graphSearch } from './tools.ts';
+import { toolByName, search as graphSearch, resolve as resolveRef } from './tools.ts';
 import { startProactive, scanUser } from './proactive.ts';
 import { LABEL_META } from './schema.ts';
 import { insights } from './insights.ts';
+import { runAlgorithm, graphSchema, ALGORITHMS } from './algorithms.ts';
 
 const ROOT = process.env.ZIV_ROOT || resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const app = new Hono();
@@ -194,8 +195,9 @@ app.get('/api/fleet', async (c) => {
 const HIDDEN = ['Episode', 'Answer', 'Notice', 'Profile', 'Conversation', 'Draft', 'Tool', 'Connector', 'Commit'];
 const nodeShape = `n.uid AS id, [l IN labels(n) WHERE l <> 'Searchable'][0] AS label, n.name AS name, n.rank AS rank, n.criticality AS criticality, n.status AS status, n.priority AS priority, n.community AS community`;
 
-async function edgesAmong(g: Awaited<ReturnType<typeof userGraph>>, ids: string[]) {
-  return g.q(`MATCH (a)-[r]->(b) WHERE a.uid IN $ids AND b.uid IN $ids AND type(r) <> 'COLLABORATES' RETURN a.uid AS source, b.uid AS target, type(r) AS type`, { ids }, 'edges among nodes');
+async function edgesAmong(g: Awaited<ReturnType<typeof userGraph>>, ids: string[], rel?: string) {
+  // COLLABORATES is derived and dense, so it only shows when asked for by name
+  return g.q(`MATCH (a)-[r]->(b) WHERE a.uid IN $ids AND b.uid IN $ids AND (type(r) <> 'COLLABORATES' OR type(r) = $rel) RETURN a.uid AS source, b.uid AS target, type(r) AS type`, { ids, rel: rel ?? '' }, 'edges among nodes');
 }
 
 app.get('/api/graph', async (c) => {
@@ -222,7 +224,7 @@ app.get('/api/graph', async (c) => {
     );
   }
   const ids = nodes.map((n) => n.id).filter(Boolean);
-  return c.json({ nodes: nodes.map((n) => ({ ...n, focus: focus.includes(n.id) })), edges: await edgesAmong(g, ids) });
+  return c.json({ nodes: nodes.map((n) => ({ ...n, focus: focus.includes(n.id) })), edges: await edgesAmong(g, ids, c.req.query('rel')) });
 });
 
 app.get('/api/answers/:id', async (c) => {
@@ -260,6 +262,15 @@ app.get('/api/insights', async (c) => {
   const g = await userGraph(user(c));
   return c.json(await insights(g, Number(c.req.query('since')) || undefined));
 });
+
+app.get('/api/algorithms', (c) => c.json(ALGORITHMS));
+app.post('/api/algorithms/run', async (c) => {
+  const g = await userGraph(user(c));
+  const b = await c.req.json();
+  for (const k of ['source', 'target'] as const) if (b[k]) { const r = await resolveRef(g, b[k]); if (!r) throw new HttpError(400, `I couldn't find "${b[k]}"`); b[k] = r.uid; }
+  try { return c.json(await runAlgorithm(g, b)); } catch (e: any) { throw new HttpError(400, e.message); }
+});
+app.get('/api/schema', async (c) => c.json(await graphSchema(await userGraph(user(c)))));
 
 app.get('/api/memory', async (c) => {
   const g = await userGraph(user(c));

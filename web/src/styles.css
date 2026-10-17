@@ -705,3 +705,29 @@ kbd { font: 500 11px Inter, sans-serif; color: var(--muted); background: var(--c
 .p-label { font-size: 12px; color: var(--muted); }
 .p-icon { width: 28px; height: 28px; display: grid; place-items: center; border-radius: 9px; background: var(--chip); border: 1px solid var(--line); color: var(--text-2); flex: none; }
 .p-empty { padding: 18px; color: var(--muted); text-align: center; font-size: 13.5px; }
+
+/* algorithms + schema */
+.algo, .schema { flex: 1; display: grid; grid-template-columns: 300px 1fr; gap: 12px; min-height: 0; }
+.schema { grid-template-columns: 1fr 380px; }
+.algo-side, .schema-side { background: var(--panel); border: 1px solid var(--line); border-radius: 18px; padding: 14px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; }
+.algo-presets { display: flex; flex-wrap: wrap; gap: 6px; }
+.algo-presets button { font-size: 12.5px; padding: 6px 10px; border-radius: 10px; background: var(--chip); border: 1px solid var(--line); color: var(--text-2); text-align: left; }
+.algo-presets button.on { border-color: var(--accent); color: var(--text); background: color-mix(in srgb, var(--accent) 10%, var(--chip)); }
+.algo-form { display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--line); padding-top: 12px; }
+.algo-form label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+.algo-form select, .algo-form input { background: var(--bg); border: 1px solid var(--line-2); border-radius: 10px; padding: 7px 9px; color: var(--text); outline: none; font-size: 13.5px; }
+.algo-what { color: var(--text-2); font-size: 12.5px; }
+.algo-main { display: flex; flex-direction: column; gap: 10px; min-height: 0; }
+.algo-head b { font: 600 16px Sora, Inter, sans-serif; }
+.algo-summary { color: var(--text-2); font-size: 13.5px; margin-top: 2px; }
+.algo-canvas, .schema-canvas { flex: 1; min-height: 280px; border: 1px solid var(--line); border-radius: 18px; overflow: hidden; }
+.algo-table, .algo-paths { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 4px; max-height: 190px; overflow-y: auto; }
+.algo-table button { display: flex; gap: 8px; align-items: center; padding: 6px 10px; border-radius: 10px; background: var(--panel); border: 1px solid var(--line); text-align: left; font-size: 13px; }
+.algo-table code { font-size: 12px; color: var(--accent-2); }
+.algo-paths div { padding: 8px 10px; border-radius: 10px; background: var(--panel); border: 1px solid var(--line); font-size: 13px; }
+.schema-side h3 { margin: 0; font: 600 14px Sora, Inter, sans-serif; display: flex; gap: 6px; align-items: baseline; }
+.schema-list { display: flex; flex-direction: column; gap: 3px; }
+.triple { display: flex; align-items: center; gap: 6px; font-size: 12.5px; padding: 4px 6px; border-radius: 8px; }
+.triple:hover { background: var(--hover); }
+.triple code { color: var(--accent-2); font-size: 11.5px; }
+.triple small { margin-left: auto; }

@@ -4,6 +4,7 @@ import { useStore, set } from '../store';
 import { ForceGraph } from './ForceGraph';
 import { Icon } from './icons';
 import { InsightsPanel } from './InsightsPanel';
+import { AlgorithmsPanel, SchemaPanel } from './AlgoPanels';
 
 const SAMPLES = [
   ['Who knows payments-api', `MATCH (p:Person)<-[:AUTHORED_BY]-(c:Commit)-[:TOUCHES]->(:File)-[:IN_REPO]->(:Repo)-[:IMPLEMENTS]->(:System {name:'payments-api'})\nRETURN p.name AS person, count(DISTINCT c) AS commits ORDER BY commits DESC`],
@@ -26,7 +27,7 @@ export function GraphView() {
   const [query, setQuery] = useState(SAMPLES[0][1]);
   const [result, setResult] = useState<{ rows: any[]; text: string } | null>(null);
   const [search, setSearch] = useState('');
-  const [tab, setTab] = useState<'explore' | 'insights'>('explore');
+  const [tab, setTab] = useState<'explore' | 'insights' | 'algorithms' | 'schema'>('explore');
   const [focusSet, setFocusSet] = useState<Set<string> | null>(null);
 
   useEffect(() => {
@@ -63,25 +64,27 @@ export function GraphView() {
         <div className="seg big">
           <button className={tab === 'explore' ? 'on' : ''} onClick={() => setTab('explore')}><Icon.graph size={14} /> Explore</button>
           <button className={tab === 'insights' ? 'on' : ''} onClick={() => setTab('insights')}><Icon.spark size={14} /> Insights</button>
+          <button className={tab === 'algorithms' ? 'on' : ''} onClick={() => setTab('algorithms')}><Icon.bolt size={14} /> Algorithms</button>
+          <button className={tab === 'schema' ? 'on' : ''} onClick={() => setTab('schema')}><Icon.database size={14} /> Schema</button>
         </div>
         <div className="search-box sm"><Icon.search size={15} /><input placeholder="Find a node" value={search} onChange={(e) => { setSearch(e.target.value); setFocusSet(null); }} /></div>
-        <div className="seg">
+        {tab === 'explore' && <div className="seg">
           <button className={sizeBy === 'degree' ? 'on' : ''} onClick={() => setSizeBy('degree')}>Size: links</button>
           <button className={sizeBy === 'rank' ? 'on' : ''} onClick={() => setSizeBy('rank')}>Size: PageRank</button>
-        </div>
-        <div className="seg">
+        </div>}
+        {tab === 'explore' && <div className="seg">
           <button className={colorBy === 'label' ? 'on' : ''} onClick={() => setColorBy('label')}>Color: type</button>
           <button className={colorBy === 'community' ? 'on' : ''} onClick={() => setColorBy('community')}>Color: groups</button>
-        </div>
+        </div>}
       </div>
-      <div className="label-chips">
+      {tab === 'explore' && <div className="label-chips">
         {counts.map(([l, n]) => (
           <button key={l} className={hidden.has(l) ? 'off' : ''} onClick={() => { const h = new Set(hidden); h.has(l) ? h.delete(l) : h.add(l); setHidden(h); }}>
             <span className="chip-dot" style={{ background: labels[l]?.color || '#999' }} /> {l} <small>{n}</small>
           </button>
         ))}
-      </div>
-      {tab === 'insights' ? (
+      </div>}
+      {tab === 'algorithms' ? <AlgorithmsPanel /> : tab === 'schema' ? <SchemaPanel /> : tab === 'insights' ? (
         <InsightsPanel onShow={(uids) => {
           const extra = new Set(uids);
           // make sure focused nodes are visible even if their label is filtered out

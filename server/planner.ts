@@ -175,6 +175,31 @@ export async function plan(ctx: Ctx, input: string, opts: PlanOpts = {}): Promis
     if (x) return done((await call('customer_history', { org: x.uid })).text);
   }
 
+  // ---- graph algorithms by name
+  const algo: [RegExp, string, Record<string, unknown>?][] = [
+    [/\bpage ?rank\b/, 'pagerank'],
+    [/\bbetweenness|bottleneck|broker/, 'betweenness'],
+    [/\bharmonic|closest to everyone|most reachable/, 'harmonic'],
+    [/\b(communit(y|ies)|clusters?|label propagation)\b/, 'communities'],
+    [/\b(islands?|isolated|disconnected|connected components?|wcc)\b/, 'components'],
+    [/\b(reachable from|downstream of|everything .* depends on|what depends on)\b/, 'reach'],
+    [/\b(shortest path|best route|introduce me|intro to|warm intro|get to)\b/, 'shortest_path'],
+  ];
+  const hitAlgo = algo.find(([re]) => re.test(low));
+  if (hitAlgo) {
+    const lab = /\b(system|service)s?\b/.test(low) ? 'System' : /\bprojects?\b/.test(low) ? 'Project' : /\b(people|person|team|who)\b/.test(low) ? 'Person' : undefined;
+    const rel = lab === 'System' ? 'DEPENDS_ON' : lab === 'Person' ? 'COLLABORATES' : undefined;
+    const args: Record<string, unknown> = { algorithm: hitAlgo[1], ...(lab ? { label: lab } : {}), ...(rel ? { rel } : {}) };
+    if (hitAlgo[1] === 'reach') { if (!ents[0]) return done('Reachable from what? Name a system or person.'); args.source = ents[0].uid; args.rel = ents[0].label === 'Person' ? 'COLLABORATES' : 'DEPENDS_ON'; args.direction = /depends on|downstream|who/.test(low) ? 'in' : 'out'; }
+    if (hitAlgo[1] === 'shortest_path') {
+      const me = (await ctx.g.one(`MATCH (p:Person {me:true}) RETURN p.uid AS uid`, {}, '~me'))?.uid;
+      const people = ents.filter((e) => e.label === 'Person');
+      if (!people.length) return done('Who should I route to? Name a person.');
+      args.source = people.length > 1 ? people[0].uid : me; args.target = people[people.length - 1].uid; args.rel = 'COLLABORATES';
+    }
+    return done((await call('run_algorithm', args)).text);
+  }
+
   if (/\b(risks?|risky|insights?|single points? of failure|bus factor|overloaded|stretched|what changed|since yesterday|health ?check|anything (worrying|i should worry))\b/.test(low)) {
     const focus = /bus factor|knows it/.test(low) ? 'bus' : /single point|spof/.test(low) ? 'spof' : /overload|stretched/.test(low) ? 'load' : /what changed|since yesterday/.test(low) ? 'changed' : undefined;
     return done(`Here's what the graph says you should worry about:\n\n${(await call('insights', { focus })).text}`);

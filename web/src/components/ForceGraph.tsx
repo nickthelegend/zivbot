@@ -9,10 +9,10 @@ type E = { source: N; target: N; type: string };
 const COMMUNITY = ['#f59e0b', '#22d3ee', '#a78bfa', '#34d399', '#fb7185', '#facc15', '#60a5fa', '#f472b6', '#4ade80', '#c084fc'];
 
 export function ForceGraph({
-  nodes, edges, height = 260, onNodeClick, labels = 'auto', sizeBy = 'degree', colorBy = 'label', selected, dim, wheel = true,
+  nodes, edges, height = 260, onNodeClick, labels = 'auto', sizeBy = 'degree', colorBy = 'label', selected, dim, wheel = true, spread = 1,
 }: {
   nodes: GraphNode[]; edges: GraphEdge[]; height?: number | string; onNodeClick?: (n: GraphNode) => void;
-  labels?: 'auto' | 'all' | 'none'; sizeBy?: 'degree' | 'rank'; colorBy?: 'label' | 'community'; selected?: string; dim?: Set<string>; wheel?: boolean;
+  labels?: 'auto' | 'all' | 'none'; sizeBy?: 'degree' | 'rank'; colorBy?: 'label' | 'community'; selected?: string; dim?: Set<string>; wheel?: boolean; spread?: number;
 }) {
   const meta = useStore((s) => s.labels);
   const wrap = useRef<HTMLDivElement>(null);
@@ -97,8 +97,8 @@ export function ForceGraph({
     };
 
     const s = forceSimulation(ns)
-      .force('link', forceLink(es as any).distance(ns.length > 150 ? 34 : 54).strength(0.6))
-      .force('charge', forceManyBody().strength(ns.length > 150 ? -60 : -160))
+      .force('link', forceLink(es as any).distance((ns.length > 150 ? 34 : 54) * spread).strength(0.6 / spread))
+      .force('charge', forceManyBody().strength((ns.length > 150 ? -60 : -160) * spread * spread))
       .force('center', forceCenter(0, 0))
       .force('x', forceX(0).strength(0.04))
       .force('y', forceY(0).strength(0.06))
@@ -107,7 +107,7 @@ export function ForceGraph({
     if (ns.length > 300) s.alphaDecay(0.05);
     return () => { s.stop(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nodes, edges, sizeBy, colorBy, meta]);
+  }, [nodes, edges, sizeBy, colorBy, meta, spread]);
 
   useEffect(() => { draw.current(); }, [hover, selected, dim, labels]);
 

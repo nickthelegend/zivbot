@@ -137,3 +137,18 @@ test('planner: "help me decide" shows the stakes but never decides; an explicit 
   await plan(ctx, 'Confirm Oct 28');
   assert.equal((await g.one(`MATCH (d:Decision {uid:'decision:d-cutover'}) RETURN d.status AS s, d.choice AS c`)).c, 'Confirm Oct 28');
 });
+
+test('graph algorithms as tools: PageRank, betweenness, WCC, BFS reach, weighted shortest path', async () => {
+  const { runAlgorithm } = await import('../server/algorithms.ts');
+  const pr = await runAlgorithm(g, { algorithm: 'pagerank', label: 'System', rel: 'DEPENDS_ON' });
+  assert.equal(pr.rows[0].name, 'auth-service');
+  const bw = await runAlgorithm(g, { algorithm: 'betweenness', label: 'System', rel: 'DEPENDS_ON' });
+  assert.equal(bw.rows[0].name, 'payments-api');
+  const wcc = await runAlgorithm(g, { algorithm: 'components', label: 'System', rel: 'DEPENDS_ON' });
+  assert.ok(wcc.rows.length >= 10);
+  const reach = await runAlgorithm(g, { algorithm: 'reach', source: 'system:billing-db', rel: 'DEPENDS_ON', direction: 'in', depth: 4 });
+  assert.deepEqual(reach.rows.map((r) => r.name).sort(), ['analytics-pipeline', 'checkout-web', 'data-warehouse', 'mobile-app', 'payments-api']);
+  const sp = await runAlgorithm(g, { algorithm: 'shortest_path', source: 'system:mobile-app', target: 'system:billing-db', rel: 'DEPENDS_ON' });
+  assert.deepEqual(sp.paths![0].names, ['mobile-app', 'payments-api', 'billing-db']);
+  await assert.rejects(runAlgorithm(g, { algorithm: 'pagerank', label: 'Person) DETACH DELETE (x', rel: 'X' }), /Unknown label/);
+});

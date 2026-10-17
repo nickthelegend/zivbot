@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { zivHome } from './connectors/git.ts';
 import { semanticSearch, embedPending } from './semantic.ts';
 import { insights } from './insights.ts';
+import { runAlgorithm, ALGORITHMS, type AlgoName } from './algorithms.ts';
 
 /**
  * Graph tools — the agent's hands. The LLM agent, the offline planner and the
@@ -466,6 +467,36 @@ export const tools: Tool[] = [
         text: rows.length ? `You never reply to these senders:\n${rows.map((r) => `- **${r.name}** (${r.email}) — ${r.n} email${r.n > 1 ? 's' : ''}, last ${ago(r.last)}`).join('\n')}` : 'Your inbox is clean.',
         cards: [{ type: 'list', title: 'Unsubscribe candidates', items: rows.map((r) => ({ title: r.name, subtitle: `${r.n} emails · last ${ago(r.last)}`, uid: r.uid, badge: 'newsletter', tone: 'gray' })) }],
         data: rows,
+      };
+    },
+  },
+
+  {
+    name: 'run_algorithm',
+    description: `Run a FalkorDB graph algorithm and get ranked/grouped nodes back. Algorithms: ${Object.entries(ALGORITHMS).map(([k, v]) => `${k} (${v.what}; default ${v.defaults.label || 'any'}/${v.defaults.rel})`).join('; ')}. Labels e.g. Person, System, Project, Org; relationships e.g. COLLABORATES, DEPENDS_ON, WORKS_ON, USES, MENTIONS. reach needs source (direction in = who depends on it); shortest_path needs source and target.`,
+    params: {
+      type: 'object',
+      properties: {
+        algorithm: { type: 'string', enum: Object.keys(ALGORITHMS) },
+        label: { type: 'string' }, rel: { type: 'string' },
+        source: { type: 'string', description: 'name or uid' }, target: { type: 'string', description: 'name or uid' },
+        depth: { type: 'number' }, direction: { type: 'string', enum: ['out', 'in'] }, limit: { type: 'number' },
+      },
+      required: ['algorithm'],
+    },
+    async run({ g }, args) {
+      const src = args.source ? (await resolve(g, args.source))?.uid : undefined;
+      const dst = args.target ? (await resolve(g, args.target))?.uid : undefined;
+      if (args.source && !src) return { text: `I couldn't find "${args.source}".` };
+      if (args.target && !dst) return { text: `I couldn't find "${args.target}".` };
+      const r = await runAlgorithm(g, { ...args, algorithm: args.algorithm as AlgoName, source: src, target: dst });
+      const body = r.paths
+        ? r.paths.map((p, i) => `${i + 1}. ${p.names.join(' → ')} (cost ${p.weight})`).join('\n')
+        : r.rows.slice(0, 10).map((x, i) => `${i + 1}. **${x.name}** (${x.label})${x.score != null ? ` — ${Number(x.score).toFixed(3)}` : ''}${x.group != null ? ` — group ${x.group}` : ''}`).join('\n');
+      return {
+        text: `**${r.title}** over ${r.label ? `:${r.label}` : 'the graph'}${r.rel ? ` via ${r.rel}` : ''} — ${r.what.toLowerCase()}.\n\n${body}\n\n${r.summary}`,
+        cards: [{ type: 'graph', title: r.title, focus: [...(src ? [src] : []), ...(dst ? [dst] : []), ...r.rows.slice(0, 16).map((x) => x.uid)] }],
+        data: r,
       };
     },
   },
