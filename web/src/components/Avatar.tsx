@@ -10,8 +10,19 @@ const STYLES: Record<string, { color: string; eyes: 'tall' | 'round' | 'side' | 
   ghost: { color: '#e5e5e5', eyes: 'side' },
 };
 
+/** Hand-made character art for the preset dots (generated for ZivBot); custom dots use the vector blob. */
+const ART = new Set(['ziv', 'forge', 'scout', 'ledger']);
+
 export function Avatar({ avatar = 'ziv', color, size = 36, busy, badge }: { avatar?: string; color?: string; size?: number; busy?: boolean; badge?: boolean }) {
   const st = STYLES[avatar] || STYLES.ziv;
+  if (ART.has(avatar) && (!color || color.toLowerCase() === st.color)) {
+    return (
+      <span className={`avatar art ${busy ? 'busy' : ''}`} style={{ width: size, height: size }}>
+        <img src={`/dots/${avatar}.png`} width={size} height={size} alt="" draggable={false} />
+        {badge && <i className="avatar-badge" />}
+      </span>
+    );
+  }
   const fill = color || st.color;
   const eyes = {
     tall: [<ellipse key="a" cx="12.2" cy="15.5" rx="2.5" ry="4.2" />, <ellipse key="b" cx="19.6" cy="15.5" rx="2.5" ry="4.2" />],

@@ -2,6 +2,8 @@ import type { UserGraph, Row } from './graph.ts';
 import { loadDictionary, mentionsIn } from './ingest.ts';
 import { toolByName, search, type Card, type Ctx, type ToolResult } from './tools.ts';
 import { ago } from './util.ts';
+import { catalog, runConnectorAction } from './connectors/index.ts';
+import { connectorConfig } from './secrets.ts';
 
 /**
  * The built-in graph planner. When no LLM is configured (or it fails), ZivBot
@@ -56,6 +58,35 @@ export async function plan(ctx: Ctx, input: string, opts: PlanOpts = {}): Promis
     cards.push(...r.cards.filter((c) => c.type !== 'options'));
     return done(`${intro ?? `I asked **${name}** to take this.`} ${name} got back to me:\n\n${r.text}`);
   };
+
+  // ---- @mentions: "@Forge fix LUM-142", "@Hacker News graph databases"
+  if (t.includes('@')) {
+    const allDots = await ctx.g.q(`MATCH (d:Dot) RETURN d.uid AS uid, d.name AS name`, {}, '~dots for @mentions');
+    const byLen = (a: { name: string }, b: { name: string }) => b.name.length - a.name.length;
+    const md = allDots.sort(byLen).find((d) => low.includes(`@${d.name.toLowerCase()}`));
+    if (md && md.uid !== ctx.dot && opts.delegate && !opts.from) {
+      const rest = t.replace(new RegExp(`@${md.name}[,:]?\\s*`, 'i'), '').trim() || 'Can you take a look?';
+      return delegateTo(md.name, rest, `I messaged **${md.name}**.`);
+    }
+    const plugins = (await catalog()).sort((a, b) => b.name.length - a.name.length);
+    const mp = plugins.find((c) => low.includes(`@${c.name.toLowerCase()}`));
+    if (mp) {
+      const rest = t.replace(new RegExp(`@${mp.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[,:]?\\s*`, 'i'), '').trim();
+      const status = await ctx.g.one(`MATCH (c:Connector {uid:$u}) RETURN c.status AS status`, { u: `connector:${mp.id}` }, `is ${mp.name} connected`);
+      const action = (mp.actions || []).find((a) => !a.mutates && (a.params.required || []).length === 1);
+      if (status?.status !== 'connected' && mp.auth !== 'none') {
+        cards.push({ type: 'connectors' });
+        return done(`**${mp.name}** isn't connected yet${mp.auth === 'key' ? ' — it needs a key' : ''}. Add it from Connect apps and I'll use it right away.`);
+      }
+      if (action && rest) {
+        used.push(`${mp.id}.${action.name}`);
+        const key = action.params.required![0];
+        const out = await runConnectorAction(ctx.userId, ctx.g, mp.id, action.name, { [key]: rest });
+        return done(`From **${mp.name}** (${action.name.replace(/_/g, ' ')}):\n\n${out.slice(0, 2500)}`);
+      }
+      return done(`**${mp.name}** is ${status?.status || 'available'}. It gives your dots: ${(mp.actions || []).map((a) => `\`${a.name}\`${a.mutates ? ' (asks first)' : ''}`).join(', ') || 'its data in the graph'}.${mp.description ? `\n\n${mp.description}` : ''}`);
+    }
+  }
 
   // ---- talk to another dot: "ask Forge to …", "tell Scout …"
   const direct = t.match(/^(?:please\s+)?(?:ask|tell|have|get|message|ping|loop in)\s+(\w+)\s*(?:to|that|:|,)?\s*(.*)$/i);

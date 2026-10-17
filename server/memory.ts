@@ -42,8 +42,12 @@ export async function listConversations(g: UserGraph) {
   return g.q(
     `MATCH (c:Conversation) WHERE c.kind IN ['direct','group']
      MATCH (d:Dot)-[:MEMBER_OF]->(c)
-     OPTIONAL MATCH (c)-[:LAST]->(e:Episode)
+     WITH c, collect(d) AS ds
+     OPTIONAL MATCH (c)-[:LAST]->(l:Episode)
+     WITH c, ds, max(l.at) AS lastAt
+     OPTIONAL MATCH (c)-[:LAST]->(e:Episode) WHERE e.at = lastAt
      OPTIONAL MATCH (e)-[:BY]->(by:Dot)
+     UNWIND ds AS d
      WITH c, e, by, collect({uid: d.uid, name: d.name, avatar: d.avatar, color: d.color, stage: d.stage}) AS dots
      RETURN c.uid AS uid, c.kind AS kind, c.name AS name, c.createdAt AS createdAt, dots, e.text AS lastText, e.at AS lastAt, e.role AS lastRole, by.name AS lastBy, coalesce(c.unread, 0) AS unread
      ORDER BY coalesce(e.at, c.createdAt) DESC`,
@@ -106,7 +110,18 @@ export async function getConversation(g: UserGraph, conv: string) {
   );
 }
 
-export async function postMessage(userId: string, g: UserGraph, m: Omit<Message, 'uid' | 'at'> & { at?: number }): Promise<Message> {
+/** Appends to one conversation are serialized so the LAST/NEXT chain stays a single list. */
+const convLocks = new Map<string, Promise<unknown>>();
+export function postMessage(userId: string, g: UserGraph, m: Omit<Message, 'uid' | 'at'> & { at?: number }): Promise<Message> {
+  const key = `${g.name}|${m.conv}`;
+  const prev = convLocks.get(key) || Promise.resolve();
+  const next = prev.catch(() => {}).then(() => appendMessage(userId, g, m));
+  convLocks.set(key, next);
+  void next.finally(() => { if (convLocks.get(key) === next) convLocks.delete(key); }).catch(() => {});
+  return next;
+}
+
+async function appendMessage(userId: string, g: UserGraph, m: Omit<Message, 'uid' | 'at'> & { at?: number }): Promise<Message> {
   const msg: Message = { ...m, uid: uid('ep'), at: m.at ?? Date.now() };
   const props: Record<string, unknown> = { name: msg.text.slice(0, 80), text: msg.text, role: msg.role, at: msg.at, cards: msg.cards?.length ? JSON.stringify(msg.cards) : undefined, answer: msg.answer, proactive: msg.proactive };
   await g.q(
@@ -125,6 +140,16 @@ export async function postMessage(userId: string, g: UserGraph, m: Omit<Message,
     await linkAny(g, 'Episode', 'MENTIONS', mentionsIn(dict, msg.text).map((to) => ({ from: msg.uid, to })));
   }
   if (msg.answer) await link(g, 'Episode', 'ANSWERED_WITH', 'Answer', [{ from: msg.uid, to: msg.answer }]);
+  // @mentions of dots and plugins are edges too
+  if (msg.role === 'user' && msg.text.includes('@')) {
+    await g.q(
+      `MATCH (e:Episode {uid:$e})
+       MATCH (x) WHERE (x:Dot OR x:Connector) AND toLower($t) CONTAINS ('@' + toLower(x.name))
+       MERGE (e)-[:MENTIONS]->(x)`,
+      { e: msg.uid, t: msg.text },
+      '~link @mentions',
+    );
+  }
   if (msg.role !== 'user') await g.q(`MATCH (c:Conversation {uid:$c}) SET c.unread = coalesce(c.unread, 0) + 1`, { c: msg.conv });
   publish(userId, { type: 'message', message: msg });
   return msg;

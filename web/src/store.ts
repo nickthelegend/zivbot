@@ -36,6 +36,7 @@ export type State = {
   /** phone layout: showing the conversation list instead of a chat */
   mobileList: boolean;
   theme: 'dark' | 'light';
+  graph?: { nodes: number; edges: number; graph: string };
   call: boolean;
   customizeOpen: boolean;
 };
@@ -66,6 +67,7 @@ export function reloadState(delay = 0) {
   clearTimeout(reloadTimer);
   reloadTimer = setTimeout(async () => {
     const s = await api.state();
+    void api.stats().then((g) => set({ graph: { nodes: g.nodes, edges: g.edges, graph: g.graph } })).catch(() => {});
     set((st) => ({ ...s, active: st.active && s.conversations.some((c) => c.uid === st.active) ? st.active : s.conversations[s.conversations.length - 1]?.uid }));
   }, delay);
 }
@@ -76,6 +78,7 @@ export async function boot() {
     const s = await api.state();
     const firstDot = s.dots[0];
     set({ ...s, ready: true, active: firstDot?.conv || s.conversations[0]?.uid });
+    void api.stats().then((g) => set({ graph: { nodes: g.nodes, edges: g.edges, graph: g.graph } })).catch(() => {});
     events(onEvent, () => { reloadState(); const a = get().active; if (a) void openConversation(a); });
     void loadConnectors();
     void api.runs().then((runs) => set({ runs: Object.fromEntries(runs.map((r) => [r.uid, r])) }));

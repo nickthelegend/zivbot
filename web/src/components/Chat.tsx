@@ -6,6 +6,7 @@ import { CardView, ExchangeChip, useDotMap } from './Cards';
 import { Markdown } from './Markdown';
 import { Icon } from './icons';
 import { CallBar } from './CallBar';
+import { MentionMenu, DotCard, useMentionItems, type MentionItem } from './MentionMenu';
 
 export function Chat() {
   const active = useStore((s) => s.active);
@@ -78,7 +79,7 @@ function MessageRow({ m, prev, isGroup, answered, latest }: { m: Message; prev?:
     <>
       {time}
       <div className={`bot-row ${m.proactive ? 'proactive' : ''}`}>
-        {isGroup && <span className="bot-avatar">{!sameAuthor && <Avatar avatar={dot?.avatar} color={dot?.color} size={26} />}</span>}
+        {isGroup && <span className="bot-avatar">{!sameAuthor && <AvatarWithCard dot={dot} />}</span>}
         <div className="bot-col">
           {showName && !sameAuthor && <div className="bot-name">{dot?.name}{m.proactive && <span className="pill-mini">while you were away</span>}</div>}
           {!showName && m.proactive && <div className="bot-name"><span className="pill-mini">while you were away</span></div>}
@@ -94,6 +95,17 @@ function MessageRow({ m, prev, isGroup, answered, latest }: { m: Message; prev?:
         </div>
       </div>
     </>
+  );
+}
+
+function AvatarWithCard({ dot }: { dot?: ReturnType<ReturnType<typeof useDotMap>['get']> }) {
+  const [open, setOpen] = useState(false);
+  if (!dot) return <Avatar size={26} />;
+  return (
+    <span className="avatar-card-anchor" onMouseLeave={() => setOpen(false)}>
+      <button onClick={() => setOpen(!open)} aria-label={`${dot.name} profile`}><Avatar avatar={dot.avatar} color={dot.color} size={26} /></button>
+      {open && <DotCard dot={dot} style={{ position: 'absolute', left: 0, bottom: 34 }} onClose={() => setOpen(false)} />}
+    </span>
   );
 }
 
@@ -115,9 +127,27 @@ function Thinking({ name, avatar, steps, tool }: { name: string; avatar?: { avat
 
 function Composer({ conv, placeholder }: { conv: string; placeholder: string }) {
   const [text, setText] = useState('');
+  const graph = useStore((s) => s.graph);
+  const brain = useStore((s) => s.brain);
   const [listening, setListening] = useState(false);
   const [menu, setMenu] = useState(false);
+  const [caret, setCaret] = useState(0);
+  const [mIndex, setMIndex] = useState(0);
+  const [mHover, setMHover] = useState<number | undefined>();
+  const [mClosed, setMClosed] = useState(false);
   const ta = useRef<HTMLTextAreaElement>(null);
+  const mention = text.slice(0, caret).match(/(^|\s)@([\w .-]{0,30})$/);
+  const items = useMentionItems(mention && !mClosed ? mention[2].trimStart() : '\u0000');
+  const showMentions = !!mention && !mClosed && items.length > 0;
+  useEffect(() => { setMIndex(0); setMHover(undefined); }, [mention?.[2]]);
+  const pick = (m: MentionItem) => {
+    const start = caret - (mention![2].length + 1);
+    const next = `${text.slice(0, start)}@${m.name} ${text.slice(caret)}`;
+    setText(next);
+    const pos = start + m.name.length + 2;
+    setCaret(pos);
+    requestAnimationFrame(() => { ta.current?.focus(); ta.current?.setSelectionRange(pos, pos); });
+  };
   const rec = useRef<any>(null);
   useEffect(() => { ta.current?.focus(); }, [conv]);
   const submit = () => {
@@ -141,11 +171,30 @@ function Composer({ conv, placeholder }: { conv: string; placeholder: string }) 
   };
   return (
     <div className="composer-wrap">
+      {showMentions && <MentionMenu items={items} index={mIndex} hovered={mHover ?? (items[mIndex]?.kind === 'dot' ? mIndex : undefined)} onHover={(i) => { setMHover(i); setMIndex(i); }} onPick={pick} />}
       <div className="composer">
+        <textarea
+          ref={ta}
+          rows={1}
+          value={text}
+          placeholder={placeholder}
+          onChange={(e) => { setText(e.target.value); setCaret(e.target.selectionStart); setMClosed(false); e.target.style.height = 'auto'; e.target.style.height = `${Math.min(e.target.scrollHeight, 160)}px`; }}
+          onSelect={(e) => setCaret((e.target as HTMLTextAreaElement).selectionStart)}
+          onKeyDown={(e) => {
+            if (showMentions) {
+              if (e.key === 'ArrowDown') { e.preventDefault(); setMIndex((mIndex + 1) % items.length); setMHover(undefined); return; }
+              if (e.key === 'ArrowUp') { e.preventDefault(); setMIndex((mIndex - 1 + items.length) % items.length); setMHover(undefined); return; }
+              if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); pick(items[mIndex]); return; }
+              if (e.key === 'Escape') { setMClosed(true); return; }
+            }
+            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(); }
+          }}
+        />
+        <div className="composer-bar">
         <div className="plus-wrap">
           <button className="icon-btn round" onClick={() => setMenu(!menu)} title="More"><Icon.plus size={18} /></button>
           {menu && (
-            <div className="menu" onMouseLeave={() => setMenu(false)}>
+            <div className="menu up" onMouseLeave={() => setMenu(false)}>
               <button onClick={() => { setMenu(false); set({ connectOpen: true }); }}><Icon.bolt size={15} /> Connect apps</button>
               <button onClick={() => { setMenu(false); setText('Remember that '); ta.current?.focus(); }}><Icon.brain size={15} /> Teach me something</button>
               <button onClick={() => { setMenu(false); void send(conv, 'What needs my attention?'); }}><Icon.spark size={15} /> What needs me?</button>
@@ -153,20 +202,17 @@ function Composer({ conv, placeholder }: { conv: string; placeholder: string }) 
             </div>
           )}
         </div>
-        <textarea
-          ref={ta}
-          rows={1}
-          value={text}
-          placeholder={placeholder}
-          onChange={(e) => { setText(e.target.value); e.target.style.height = 'auto'; e.target.style.height = `${Math.min(e.target.scrollHeight, 160)}px`; }}
-          onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(); } }}
-        />
-        <button className={`icon-btn round ${listening ? 'live' : ''}`} onClick={dictate} title="Dictate"><Icon.mic size={17} /></button>
-        {text.trim() ? (
-          <button className="send-btn" onClick={submit} title="Send"><Icon.send size={17} /></button>
-        ) : (
-          <button className="send-btn voice" onClick={() => set({ call: !get().call })} title="Talk to your dot"><Icon.wave size={17} /></button>
-        )}
+          <button className="chip-btn" onClick={() => { const pos = ta.current?.selectionStart ?? text.length; const next = `${text.slice(0, pos)}${text && !/\s$/.test(text.slice(0, pos)) ? ' ' : ''}@${text.slice(pos)}`; setText(next); setMClosed(false); const p = pos + (next.length - text.length); setCaret(p); requestAnimationFrame(() => { ta.current?.focus(); ta.current?.setSelectionRange(p, p); }); }} title="Mention a dot or plugin">@ Mention</button>
+          {graph && <button className="chip-btn info" onClick={() => set({ view: 'graph' })} title={`FalkorDB graph ${graph.graph}`}><i className="pulse" />{graph.nodes.toLocaleString()} nodes</button>}
+          <span className="chip-btn info static" title="What the dots think with">{brain === 'graph-planner' ? 'Graph planner' : brain.replace(/^llm:/, '').split('/').pop()}</span>
+          <span className="grow" />
+          <button className={`icon-btn round ${listening ? 'live' : ''}`} onClick={dictate} title="Dictate"><Icon.mic size={17} /></button>
+          {text.trim() ? (
+            <button className="send-btn" onClick={submit} title="Send"><Icon.send size={17} /></button>
+          ) : (
+            <button className="send-btn voice" onClick={() => set({ call: !get().call })} title="Talk to your dot"><Icon.wave size={17} /></button>
+          )}
+        </div>
       </div>
     </div>
   );

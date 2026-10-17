@@ -15,6 +15,7 @@ export function Sidebar() {
   const connectors = useStore((s) => s.connectors);
   const pending = useStore((s) => s.pendingDrafts);
   const theme = useStore((s) => s.theme);
+  const graph = useStore((s) => s.graph);
   const [q, setQ] = useState('');
   const [searching, setSearching] = useState(false);
   const [menu, setMenu] = useState<'new' | 'me' | null>(null);
@@ -26,6 +27,11 @@ export function Sidebar() {
   return (
     <aside className="sidebar">
       <div className="side-top">
+        <div className="brand">
+          <img src="/brand/icon-64.png" width={26} height={26} alt="" />
+          <span className="brand-name">ZivBot</span>
+          {graph && <button className="graph-pulse" title={`FalkorDB · ${graph.graph}`} onClick={() => set({ view: 'graph', mobileList: false })}><i />{graph.nodes.toLocaleString()} nodes</button>}
+        </div>
         <div className="side-actions">
           <button className="icon-btn round" onClick={() => setSearching(!searching)} title="Search"><Icon.search size={17} /></button>
           <div className="menu-anchor">
@@ -44,7 +50,13 @@ export function Sidebar() {
       </div>
       {searching && <input className="side-search" autoFocus placeholder="Search" value={q} onChange={(e) => setQ(e.target.value)} />}
       <div className="conv-list">
-        {list.map((c) => {
+        {(['direct', 'group'] as const).map((kind) => {
+          const rows = list.filter((c) => c.kind === kind);
+          if (!rows.length) return null;
+          return (
+            <div key={kind} className="conv-section">
+              <div className="conv-label">{kind === 'direct' ? 'Dots' : 'Groups'}</div>
+        {rows.map((c) => {
           const isGroup = c.kind === 'group';
           const d = c.dots[0];
           const busy = Object.keys(thinking[c.uid] || {}).length > 0;
@@ -59,6 +71,9 @@ export function Sidebar() {
               </span>
               {c.unread > 0 && active !== c.uid && <span className="unread" />}
             </button>
+          );
+        })}
+            </div>
           );
         })}
       </div>
