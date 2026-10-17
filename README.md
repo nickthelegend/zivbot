@@ -76,12 +76,15 @@ Take FalkorDB away and nothing works.
    The background loop watches these too.
 8. **Graph algorithms as agent tools.** `run_algorithm` gives every dot (and any MCP client) FalkorDB's `pageRank`, `betweenness`, `HarmonicCentrality`, `labelPropagation`, `WCC`, `BFS`, and weighted `SPpaths`, where collaboration strength becomes the edge cost for a "warm intro" path. Labels and relationships are allow-listed against the live schema. The **Algorithms** tab runs them visually (size = score, colour = group), and the **Schema** tab draws the live graph model with every index.
 9. **Rebalance work.** "Who should take LUM-139?" ranks people by what they've done on the affected systems (commits, docs, past tickets) minus their load (open tickets, meetings), and drafts the move. Approving rewires `ASSIGNED_TO` and keeps a `PREVIOUSLY_ASSIGNED_TO` trail.
-10. **⌘K.** Jump to any dot or group (⌘1–⌘9), or search the whole graph.
-11. **Decision stakes.** "Help me decide" lays out the decision's source trail and everything it touches before you choose. Then the dot records the choice and drafts the follow-ups.
-12. **Dots talk to each other.** "Messaged Forge" and "2 messages with Ziv" chips open the dot-to-dot exchange. Group chats route to the dots whose roles fit. All dots share one graph memory.
-13. **Show the path.** Under every answer, **Show path** opens the exact Cypher run (with timings, row counts and the dot that ran it) and the subgraph the answer used.
-14. **Works while you're away.** A background loop re-runs triage and only speaks up when what needs you changes. Finished runs report back with test results.
-15. **Remember.** Say "remember that I prefer Codex for backend fixes": it becomes a `:Procedure` that `PREFERS` Codex, and the router weighs it on every routing decision.
+10. **Meeting prep.** "Prep me for my next meeting with Kate" follows Event → attendees → their Org → open and fixed tickets, recent mail, unanswered threads and related decisions. It writes a brief linked `(:Doc)-[:PREPARES]->(:Event)` with a suggested agenda.
+11. **Watch rules (procedural memory that acts).** "Tell me whenever a P1 reaches a customer" stores a `:Rule` that wraps a Cypher pattern. The background loop evaluates every rule, and new matches arrive with ready actions. `(:Rule)-[:FIRED_ON]->(entity)` makes sure a match never repeats. There are five kinds: customer chasing with no reply, stale P1 with no run, decision waiting too long, failed run nobody retried, and open P1 reaching a customer.
+12. **Watch the dot think.** Each Cypher step streams the nodes it touched, and the thinking card draws them as a live graph.
+13. **⌘K.** Jump to any dot or group (⌘1–⌘9), or search the whole graph.
+14. **Decision stakes.** "Help me decide" lays out the decision's source trail and everything it touches before you choose. Then the dot records the choice and drafts the follow-ups.
+15. **Dots talk to each other.** "Messaged Forge" and "2 messages with Ziv" chips open the dot-to-dot exchange. Group chats route to the dots whose roles fit. All dots share one graph memory.
+16. **Show the path.** Under every answer, **Show path** opens the exact Cypher run (with timings, row counts and the dot that ran it) and the subgraph the answer used.
+17. **Works while you're away.** A background loop re-runs triage and only speaks up when what needs you changes. Finished runs report back with test results.
+18. **Remember.** Say "remember that I prefer Codex for backend fixes": it becomes a `:Procedure` that `PREFERS` Codex, and the router weighs it on every routing decision.
 
 ## Architecture
 
@@ -292,6 +295,15 @@ OPTIONAL MATCH (p)<-[:AUTHORED_BY]-(c:Commit)-[:TOUCHES]->(:File)-[:IN_REPO]->(:
 OPTIONAL MATCH (p)<-[:ASSIGNED_TO]-(open:Ticket {status:'open'})
 OPTIONAL MATCH (p)-[:ATTENDS]->(e:Event) WHERE e.start > $now AND e.start < $soon
 RETURN p.name, commits, docs, tickets, count(DISTINCT open) AS load, count(DISTINCT e) AS meetings
+```
+
+**Watch rule: an open P1 that reaches a customer:**
+```cypher
+MATCH (t:Ticket {status: 'open', priority: 'P1'})-[:AFFECTS]->(s:System)
+MATCH (s)<-[:DEPENDS_ON*0..3]-(:System)<-[:USES]-(o:Org {kind: 'customer'})
+WITH t, collect(DISTINCT o.name) AS customers, sum(DISTINCT o.arr) AS arr
+RETURN t.uid, t.key, customers, arr
+// then: MERGE (r:Rule {uid:$rule})-[f:FIRED_ON]->(t) so it never fires twice
 ```
 
 **Full-text search across every label:**
