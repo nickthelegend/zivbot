@@ -15,6 +15,8 @@
 | <img src="docs/screenshots/trace.png" alt="Trace drawer"> | <img src="docs/screenshots/forge-run.png" alt="Forge running Codex"> |
 | **Insights: bus factor, single points of failure, who's waiting** | **@-mention dots and plugins** |
 | <img src="docs/screenshots/insights.png" alt="Insights"> | <img src="docs/screenshots/mentions.png" alt="Mentions"> |
+| **FalkorDB algorithms as tools** | **The live graph model (Schema)** |
+| <img src="docs/screenshots/algorithms.png" alt="Algorithms"> | <img src="docs/screenshots/schema.png" alt="Schema"> |
 | **Your graph + Cypher console** | **Connect Apps: 28 connectors and your AI subscriptions** |
 | <img src="docs/screenshots/graph.png" alt="Graph explorer"> | <img src="docs/screenshots/connect.png" alt="Connect Apps"> |
 
@@ -72,11 +74,14 @@ Take FalkorDB away and nothing works.
    - what changed in 24 hours (every node carries `firstSeen`/`lastSeen`)
 
    The background loop watches these too.
-8. **Decision stakes.** "Help me decide" lays out the decision's source trail and everything it touches before you choose. Then the dot records the choice and drafts the follow-ups.
-9. **Dots talk to each other.** "Messaged Forge" and "2 messages with Ziv" chips open the dot-to-dot exchange. Group chats route to the dots whose roles fit. All dots share one graph memory.
-10. **Show the path.** Under every answer, **Show path** opens the exact Cypher run (with timings, row counts and the dot that ran it) and the subgraph the answer used.
-11. **Works while you're away.** A background loop re-runs triage and only speaks up when what needs you changes. Finished runs report back with test results.
-12. **Remember.** Say "remember that I prefer Codex for backend fixes": it becomes a `:Procedure` that `PREFERS` Codex, and the router weighs it on every routing decision.
+8. **Graph algorithms as agent tools.** `run_algorithm` gives every dot (and any MCP client) FalkorDB's `pageRank`, `betweenness`, `HarmonicCentrality`, `labelPropagation`, `WCC`, `BFS`, and weighted `SPpaths`, where collaboration strength becomes the edge cost for a "warm intro" path. Labels and relationships are allow-listed against the live schema. The **Algorithms** tab runs them visually (size = score, colour = group), and the **Schema** tab draws the live graph model with every index.
+9. **Rebalance work.** "Who should take LUM-139?" ranks people by what they've done on the affected systems (commits, docs, past tickets) minus their load (open tickets, meetings), and drafts the move. Approving rewires `ASSIGNED_TO` and keeps a `PREVIOUSLY_ASSIGNED_TO` trail.
+10. **⌘K.** Jump to any dot or group (⌘1–⌘9), or search the whole graph.
+11. **Decision stakes.** "Help me decide" lays out the decision's source trail and everything it touches before you choose. Then the dot records the choice and drafts the follow-ups.
+12. **Dots talk to each other.** "Messaged Forge" and "2 messages with Ziv" chips open the dot-to-dot exchange. Group chats route to the dots whose roles fit. All dots share one graph memory.
+13. **Show the path.** Under every answer, **Show path** opens the exact Cypher run (with timings, row counts and the dot that ran it) and the subgraph the answer used.
+14. **Works while you're away.** A background loop re-runs triage and only speaks up when what needs you changes. Finished runs report back with test results.
+15. **Remember.** Say "remember that I prefer Codex for backend fixes": it becomes a `:Procedure` that `PREFERS` Codex, and the router weighs it on every routing decision.
 
 ## Architecture
 
@@ -267,6 +272,26 @@ OPTIONAL MATCH (x)<-[:BLOCKED_BY]-(blocked:Project)
 OPTIONAL MATCH (x)-[:USES|AFFECTS|PART_OF*1..2]-(s:System)
 OPTIONAL MATCH (s)<-[:DEPENDS_ON*0..3]-(:System)<-[:USES]-(o:Org {kind:'customer'})
 RETURN collect(DISTINCT blocked.name), collect(DISTINCT s.name), collect(DISTINCT o.name)
+```
+
+**Algorithms as tools** (from `server/algorithms.ts`):
+```cypher
+CALL algo.pageRank('System', 'DEPENDS_ON') YIELD node, score
+CALL algo.HarmonicCentrality({nodeLabels:['Person'], relationshipTypes:['COLLABORATES']}) YIELD node, score
+CALL algo.WCC({nodeLabels:['System'], relationshipTypes:['DEPENDS_ON']}) YIELD node, componentId
+MATCH (s {uid:$src}) CALL algo.BFS(s, 3, 'DEPENDS_ON') YIELD nodes
+MATCH (s {uid:$src}), (t {uid:$dst})
+CALL algo.SPpaths({sourceNode: s, targetNode: t, relTypes: ['COLLABORATES'], weightProp: 'cost', maxLen: 6, pathCount: 3}) YIELD path, pathWeight
+```
+
+**Rebalance: knowledge minus load:**
+```cypher
+MATCH (t:Ticket {uid:$u})-[:AFFECTS]->(s:System) MATCH (p:Person)
+OPTIONAL MATCH (p)<-[:AUTHORED_BY]-(c:Commit)-[:TOUCHES]->(:File)-[:IN_REPO]->(:Repo)-[:IMPLEMENTS]->(s)
+…
+OPTIONAL MATCH (p)<-[:ASSIGNED_TO]-(open:Ticket {status:'open'})
+OPTIONAL MATCH (p)-[:ATTENDS]->(e:Event) WHERE e.start > $now AND e.start < $soon
+RETURN p.name, commits, docs, tickets, count(DISTINCT open) AS load, count(DISTINCT e) AS meetings
 ```
 
 **Full-text search across every label:**
