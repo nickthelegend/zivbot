@@ -133,7 +133,8 @@ export async function plan(ctx: Ctx, input: string, opts: PlanOpts = {}): Promis
 
   // ---- act: fix tickets with the coding-agent fleet
   const engineer = !opts.dot || /engineer/i.test(opts.dot.role);
-  if (/\b(fix|patch|repair|resolve|ship a fix|hand .* to|dispatch)\b/.test(low) && (!opts.inGroup || engineer)) {
+  const isWatch = /^(watch|alert me|tell me|let me know|notify me|ping me|warn me|whenever)\b/.test(low);
+  if (!isWatch && /\b(fix|patch|repair|resolve|ship a fix|hand .* to|dispatch)\b/.test(low) && (!opts.inGroup || engineer)) {
     const keys = [...t.matchAll(/\b([A-Z]{2,6}-\d+)\b/gi)].map((m) => m[1].toUpperCase());
     const targets = keys.length ? keys : ents.filter((e) => ['Ticket', 'Org', 'System'].includes(e.label)).map((e) => e.uid);
     if (targets.length) {
@@ -179,6 +180,12 @@ export async function plan(ctx: Ctx, input: string, opts: PlanOpts = {}): Promis
   if (/(what did|asked|ask(ed)? for|was it resolved|history with|last month|status with|where are we with)/.test(low)) {
     const x = first('Org', 'Person');
     if (x) return done((await call('customer_history', { org: x.uid })).text);
+  }
+
+  // ---- watch rules: "tell me whenever a customer chases twice"
+  if (/^(watch|alert me|tell me|let me know|notify me|ping me|warn me)\b.*\b(when|whenever|if)\b|^whenever\b|^watch (for|out for)\b/.test(low)) {
+    const hours = Number(low.match(/(\d+)\s*(h|hours?)\b/)?.[1]) || undefined;
+    return done((await call('watch', { when: t, hours })).text);
   }
 
   // ---- graph algorithms by name

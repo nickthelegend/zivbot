@@ -96,6 +96,10 @@ export const api = {
   runAlgorithm: (b: { algorithm: string; label?: string; rel?: string; source?: string; target?: string; depth?: number; direction?: string }) =>
     req<{ title: string; what: string; label?: string; rel?: string; summary: string; rows: { uid: string; name: string; label: string; score?: number; group?: number }[]; paths?: { uids: string[]; names: string[]; weight: number }[] }>('/api/algorithms/run', b),
   schema: () => req<{ triples: { from: string; rel: string; to: string; n: number }[]; labels: { label: string; n: number }[]; indexes: { label: string; properties: string[]; types: Record<string, string[]> }[] }>('/api/schema'),
+  rules: () => req<{ rules: { uid: string; kind: string; title: string; says: string; active: boolean; dot?: string; fired: number; lastFired?: number }[]; kinds: Record<string, { title: string; says: string; defaults: Record<string, number> }> }>('/api/rules'),
+  addRule: (kind: string) => req<{ uid: string; fired: any[] }>('/api/rules', { kind }),
+  setRule: (uid: string, active: boolean) => req(`/api/rules/${uid}/active`, { active }),
+  runRules: () => req<any[]>('/api/rules/run', {}),
   insights: () => req<{ key: string; title: string; blurb: string; items: { title: string; detail: string; uids: string[]; severity: 'high' | 'medium' | 'low'; ask?: string }[] }[]>('/api/insights'),
 };
 

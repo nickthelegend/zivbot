@@ -19,6 +19,7 @@ import { startProactive, scanUser } from './proactive.ts';
 import { LABEL_META } from './schema.ts';
 import { insights } from './insights.ts';
 import { runAlgorithm, graphSchema, ALGORITHMS } from './algorithms.ts';
+import { RULE_KINDS, listRules, createRule, setRuleActive, evaluateRules } from './rules.ts';
 
 const ROOT = process.env.ZIV_ROOT || resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const app = new Hono();
@@ -271,6 +272,27 @@ app.post('/api/algorithms/run', async (c) => {
   try { return c.json(await runAlgorithm(g, b)); } catch (e: any) { throw new HttpError(400, e.message); }
 });
 app.get('/api/schema', async (c) => c.json(await graphSchema(await userGraph(user(c)))));
+
+app.get('/api/rules', async (c) => {
+  const g = await userGraph(user(c));
+  return c.json({ rules: await listRules(g), kinds: Object.fromEntries(Object.entries(RULE_KINDS).map(([k, v]) => [k, { title: v.title, says: v.says, defaults: v.defaults }])) });
+});
+app.post('/api/rules', async (c) => {
+  const id = user(c);
+  const g = await userGraph(id);
+  const b = await c.req.json();
+  const ru = await createRule(g, b.kind, { params: b.params, text: b.text });
+  const fired = await evaluateRules(id, g, ru);
+  return c.json({ uid: ru, fired });
+});
+app.post('/api/rules/:uid/active', async (c) => {
+  await setRuleActive(await userGraph(user(c)), c.req.param('uid'), !!(await c.req.json()).active);
+  return c.json({ ok: true });
+});
+app.post('/api/rules/run', async (c) => {
+  const id = user(c);
+  return c.json(await evaluateRules(id, await userGraph(id)));
+});
 
 app.get('/api/memory', async (c) => {
   const g = await userGraph(user(c));

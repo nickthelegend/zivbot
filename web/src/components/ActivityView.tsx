@@ -10,6 +10,9 @@ export function ActivityView() {
   const draftStatus = useStore((s) => s.draftStatus);
   const [drafts, setDrafts] = useState<any[]>([]);
   const [fleet, setFleet] = useState<{ agents: any[]; routing: any[] } | null>(null);
+  const [rules, setRules] = useState<Awaited<ReturnType<typeof api.rules>> | null>(null);
+  const loadRules = () => void api.rules().then(setRules).catch(() => {});
+  useEffect(loadRules, []);
   useEffect(() => {
     void api.drafts().then(setDrafts);
     void api.fleet().then(setFleet).catch(() => {});
@@ -47,6 +50,21 @@ export function ActivityView() {
         ) : <RunCard key={r.uid} uid={r.uid} />))}
       </div>
       <div className="act-col">
+        <h2>Watch rules <small>{rules?.rules.length ?? 0}</small></h2>
+        <div className="muted-line">Graph patterns your dots check in the background — they speak up the moment one matches.</div>
+        {rules?.rules.map((r) => (
+          <div key={r.uid} className={`act-item rule ${r.active ? '' : 'dim'}`}>
+            <span className="tone tone-amber">rule</span>
+            <div className="grow"><b>{r.title}</b><small>{r.says} · fired {r.fired}×{r.dot ? ` · ${r.dot}` : ''}</small></div>
+            <button className={`switch ${r.active ? 'on' : ''}`} onClick={() => void api.setRule(r.uid, !r.active).then(loadRules)} aria-label="toggle"><i /></button>
+          </div>
+        ))}
+        <div className="rule-add">
+          {rules && Object.entries(rules.kinds).filter(([k]) => !rules.rules.some((r) => r.kind === k)).map(([k, v]) => (
+            <button key={k} onClick={() => void api.addRule(k).then(loadRules)}><Icon.plus size={12} /> {v.title}</button>
+          ))}
+          {rules && rules.rules.length > 0 && <button onClick={() => void api.runRules().then(loadRules)}><Icon.refresh size={12} /> Check now</button>}
+        </div>
         <h2>Your agent fleet</h2>
         <div className="muted-line">Routing for <code>payments-api</code> — scored by one Cypher query over past runs, quota and your preferences.</div>
         {fleet?.routing.map((c: any, i: number) => (

@@ -8,6 +8,7 @@ import { zivHome } from './connectors/git.ts';
 import { semanticSearch, embedPending } from './semantic.ts';
 import { insights } from './insights.ts';
 import { runAlgorithm, ALGORITHMS, type AlgoName } from './algorithms.ts';
+import { RULE_KINDS, kindFromText, createRule, evaluateRules } from './rules.ts';
 
 /**
  * Graph tools — the agent's hands. The LLM agent, the offline planner and the
@@ -549,6 +550,24 @@ export const tools: Tool[] = [
         cards: [{ type: 'list', title: 'Unsubscribe candidates', items: rows.map((r) => ({ title: r.name, subtitle: `${r.n} emails · last ${ago(r.last)}`, uid: r.uid, badge: 'newsletter', tone: 'gray' })) }],
         data: rows,
       };
+    },
+  },
+
+  {
+    name: 'watch',
+    description: `Create a watch rule: a graph pattern I check in the background and act on when it matches. Kinds: ${Object.entries(RULE_KINDS).map(([k, v]) => `${k} (${v.title})`).join('; ')}.`,
+    params: { type: 'object', properties: { when: { type: 'string', description: 'what to watch for, in words' }, kind: { type: 'string', enum: Object.keys(RULE_KINDS) }, hours: { type: 'number' }, min: { type: 'number' } }, required: ['when'] },
+    async run({ g, userId, dot }, { when: what, kind, hours, min }) {
+      const k = kind || kindFromText(what);
+      if (!k) return { text: `I can watch for: ${Object.values(RULE_KINDS).map((v) => v.title.toLowerCase()).join('; ')}. Which one?` };
+      const params: Record<string, number> = {};
+      if (hours) params.hours = hours;
+      if (min) params.min = min;
+      const ru = await createRule(g, k, { dot, params, text: what });
+      const fired = await evaluateRules(userId, g, ru);
+      const n = fired.reduce((a, f) => a + f.matches.length, 0);
+      const r = RULE_KINDS[k];
+      return { text: `Watching ${r.says.replace(/\{(\w+)\}/g, (_, x) => String(params[x] ?? r.defaults[x]))}. ${n ? `It already matches ${n} thing${n > 1 ? 's' : ''} — I posted them above.` : 'Nothing matches right now; I’ll tell you the moment something does.'}`, data: { rule: ru, fired } };
     },
   },
 

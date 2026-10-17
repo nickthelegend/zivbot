@@ -14,7 +14,7 @@ import type { UserGraph } from './graph.ts';
 export const LABELS = [
   'Person', 'Team', 'Org', 'Project', 'System', 'Repo', 'File', 'Ticket', 'Email', 'Thread', 'Event', 'Doc',
   'ChatMessage', 'Channel', 'Decision', 'Agent', 'Run', 'Tool', 'Connector', 'Dot', 'Conversation', 'Episode',
-  'Fact', 'Procedure', 'Answer', 'Notice', 'Draft', 'Profile', 'Commit',
+  'Fact', 'Procedure', 'Answer', 'Notice', 'Draft', 'Profile', 'Commit', 'Rule',
 ] as const;
 export type Label = (typeof LABELS)[number];
 
@@ -63,4 +63,5 @@ export const LABEL_META: Record<string, { color: string; icon: string }> = {
   Procedure: { color: '#f0abfc', icon: 'list' },
   Answer: { color: '#cbd5e1', icon: 'spark' },
   Draft: { color: '#5eead4', icon: 'edit' },
+  Rule: { color: '#fb923c', icon: 'eye' },
 };

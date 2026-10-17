@@ -177,3 +177,17 @@ test('meeting prep follows event → attendees → org → tickets, mail and una
   const linked = await g.one(`MATCH (d:Doc)-[:PREPARES]->(:Event {uid:'event:bw-qbr'}) RETURN count(d) AS n`);
   assert.equal(linked.n, 1);
 });
+
+test('watch rules: a graph pattern fires once per match, as procedural memory', async () => {
+  const { plan } = await import('../server/planner.ts');
+  const { evaluateRules, listRules } = await import('../server/rules.ts');
+  const r = await plan({ g, userId: USER, dot }, 'Tell me whenever a customer keeps writing with no reply');
+  assert.ok(r.tools.includes('watch'), r.tools.join(','));
+  assert.match(r.text, /already matches 1 thing/);
+  const again = await evaluateRules(USER, g);
+  assert.equal(again.length, 0, 'does not fire twice on the same thread');
+  const p1 = await plan({ g, userId: USER, dot }, 'Alert me when a P1 sits with no fix for 1 hour');
+  assert.match(p1.text, /P1 has been open 1h\+/);
+  const rules = await listRules(g);
+  assert.ok(rules.length >= 2 && rules.every((x: any) => x.active));
+});

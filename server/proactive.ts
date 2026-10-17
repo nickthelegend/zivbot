@@ -7,6 +7,7 @@ import { runHooks } from './fleet.ts';
 import { toolByName } from './tools.ts';
 import { clip } from './util.ts';
 import { insights } from './insights.ts';
+import { evaluateRules } from './rules.ts';
 
 /**
  * "I keep working while you're away." On a timer, each user's chief dot
@@ -50,6 +51,7 @@ export async function scanUser(userId: string, force = false) {
   if (!connected) return;
   const chief = (await listDots(g)).find((d) => d.stage === 'ready');
   if (!chief) return;
+  await evaluateRules(userId, g, undefined, true).catch((e) => console.error('[rules]', e.message));
   const r = await toolByName('triage')!.run({ g, userId, dot: chief.uid }, {});
   const data = r.data as any;
   // speak up when the work changed OR a new high-severity risk appeared in the graph

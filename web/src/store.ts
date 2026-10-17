@@ -189,6 +189,9 @@ function onEvent(e: any) {
       set((s) => ({ draftStatus: { ...s.draftStatus, [e.uid]: { status: e.status, result: e.result } } }));
       reloadState(100);
       break;
+    case 'rules':
+      toast('A watch rule fired');
+      break;
     case 'dots':
     case 'profile':
       reloadState(50);
