@@ -79,12 +79,16 @@ Take FalkorDB away and nothing works.
 10. **Meeting prep.** "Prep me for my next meeting with Kate" follows Event → attendees → their Org → open and fixed tickets, recent mail, unanswered threads and related decisions. It writes a brief linked `(:Doc)-[:PREPARES]->(:Event)` with a suggested agenda.
 11. **Watch rules (procedural memory that acts).** "Tell me whenever a P1 reaches a customer" stores a `:Rule` that wraps a Cypher pattern. The background loop evaluates every rule, and new matches arrive with ready actions. `(:Rule)-[:FIRED_ON]->(entity)` makes sure a match never repeats. There are five kinds: customer chasing with no reply, stale P1 with no run, decision waiting too long, failed run nobody retried, and open P1 reaching a customer.
 12. **Watch the dot think.** Each Cypher step streams the nodes it touched, and the thinking card draws them as a live graph.
-13. **⌘K.** Jump to any dot or group (⌘1–⌘9), or search the whole graph.
-14. **Decision stakes.** "Help me decide" lays out the decision's source trail and everything it touches before you choose. Then the dot records the choice and drafts the follow-ups.
-15. **Dots talk to each other.** "Messaged Forge" and "2 messages with Ziv" chips open the dot-to-dot exchange. Group chats route to the dots whose roles fit. All dots share one graph memory.
-16. **Show the path.** Under every answer, **Show path** opens the exact Cypher run (with timings, row counts and the dot that ran it) and the subgraph the answer used.
-17. **Works while you're away.** A background loop re-runs triage and only speaks up when what needs you changes. Finished runs report back with test results.
-18. **Remember.** Say "remember that I prefer Codex for backend fixes": it becomes a `:Procedure` that `PREFERS` Codex, and the router weighs it on every routing decision.
+13. **Timeline.** "What happened with LUM-139?" tells the story of any entity in order, with who acted: Kate's first email, the ticket, our promise, two follow-ups, the fix, the QBR prep. It walks one hop to everything dated, and two hops through MENTIONS/ABOUT/FOR_TICKET/RESOLVES/SOURCE.
+14. **Agent skill graph.** Every run feeds `(Agent)-[:SKILLED_IN {wins, losses, score}]->(System)` (Laplace-smoothed), and routing reads it. "What is Codex good at?" answers from it, and Activity draws it.
+15. **One person, one node.** Name similarity plus Jaccard overlap of each person's two-hop working context finds the same human split across apps (Slack's `priya.r` = the directory's Priya Raman). Approving the merge rewires every relationship onto one node.
+16. **Knowledge going stale.** Docs written before the latest incidents on their systems are flagged, with runbooks marked as high risk.
+17. **⌘K.** Jump to any dot or group (⌘1–⌘9), or search the whole graph.
+18. **Decision stakes.** "Help me decide" lays out the decision's source trail and everything it touches before you choose. Then the dot records the choice and drafts the follow-ups.
+19. **Dots talk to each other.** "Messaged Forge" and "2 messages with Ziv" chips open the dot-to-dot exchange. Group chats route to the dots whose roles fit. All dots share one graph memory.
+20. **Show the path.** Under every answer, **Show path** opens the exact Cypher run (with timings, row counts and the dot that ran it) and the subgraph the answer used.
+21. **Works while you're away.** A background loop re-runs triage and only speaks up when what needs you changes. Finished runs report back with test results.
+22. **Remember.** Say "remember that I prefer Codex for backend fixes": it becomes a `:Procedure` that `PREFERS` Codex, and the router weighs it on every routing decision.
 
 ## Architecture
 
@@ -304,6 +308,23 @@ MATCH (s)<-[:DEPENDS_ON*0..3]-(:System)<-[:USES]-(o:Org {kind: 'customer'})
 WITH t, collect(DISTINCT o.name) AS customers, sum(DISTINCT o.arr) AS arr
 RETURN t.uid, t.key, customers, arr
 // then: MERGE (r:Rule {uid:$rule})-[f:FIRED_ON]->(t) so it never fires twice
+```
+
+**Same person in two apps (shared 2-hop working context):**
+```cypher
+UNWIND $pairs AS p
+MATCH (a:Person {uid: p.a})-[*1..2]-(x) WHERE x:System OR x:Ticket OR x:Project OR x:File OR x:Channel OR x:Thread
+WITH p, collect(DISTINCT x.uid) AS A
+MATCH (b:Person {uid: p.b})-[*1..2]-(y) WHERE y:System OR y:Ticket OR y:Project OR y:File OR y:Channel OR y:Thread
+WITH p, A, collect(DISTINCT y.uid) AS B
+RETURN p.a, p.b, [u IN A WHERE u IN B] AS shared, size(A), size(B)
+```
+
+**Agent skill graph:**
+```cypher
+MATCH (a:Agent)<-[:EXECUTED_BY]-(r:Run)-[:WORKED_ON]->(sys:System) WHERE r.status IN ['succeeded','failed']
+WITH a, sys, count(CASE WHEN r.status = 'succeeded' THEN 1 END) AS wins, count(CASE WHEN r.status = 'failed' THEN 1 END) AS losses
+MERGE (a)-[s:SKILLED_IN]->(sys) SET s.wins = wins, s.losses = losses, s.score = (wins + 1.0) / (wins + losses + 2.0)
 ```
 
 **Full-text search across every label:**
