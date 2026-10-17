@@ -29,6 +29,8 @@ export type PlanResult = { text: string; cards: Card[]; tools: string[] };
 export type PlanOpts = {
   dot?: { uid: string; name: string; role: string };
   from?: string;
+  /** answering inside a group chat alongside other dots: no delegation, stick to your role */
+  inGroup?: boolean;
   delegate?: (to: string, goal: string) => Promise<{ text: string; cards: Card[]; to?: { name: string } }>;
 };
 
@@ -47,7 +49,7 @@ export async function plan(ctx: Ctx, input: string, opts: PlanOpts = {}): Promis
   const ents = await entities(ctx.g, t);
   const first = (...labels: string[]) => ents.find((e) => labels.includes(e.label));
   const dots = await ctx.g.q(`MATCH (d:Dot) WHERE d.uid <> $me RETURN d.name AS name, d.role AS role`, { me: ctx.dot }, '~other dots');
-  const specialist = (re: RegExp) => (opts.from || !opts.delegate || (opts.dot && re.test(opts.dot.role)) ? null : dots.find((d) => re.test(d.role)));
+  const specialist = (re: RegExp) => (opts.from || opts.inGroup || !opts.delegate || (opts.dot && re.test(opts.dot.role)) ? null : dots.find((d) => re.test(d.role)));
   const delegateTo = async (name: string, goal: string, intro?: string) => {
     used.push('message_dot');
     const r = await opts.delegate!(name, goal);
@@ -94,7 +96,8 @@ export async function plan(ctx: Ctx, input: string, opts: PlanOpts = {}): Promis
   }
 
   // ---- act: fix tickets with the coding-agent fleet
-  if (/\b(fix|patch|repair|resolve|ship a fix|hand .* to|dispatch)\b/.test(low)) {
+  const engineer = !opts.dot || /engineer/i.test(opts.dot.role);
+  if (/\b(fix|patch|repair|resolve|ship a fix|hand .* to|dispatch)\b/.test(low) && (!opts.inGroup || engineer)) {
     const keys = [...t.matchAll(/\b([A-Z]{2,6}-\d+)\b/gi)].map((m) => m[1].toUpperCase());
     const targets = keys.length ? keys : ents.filter((e) => ['Ticket', 'Org', 'System'].includes(e.label)).map((e) => e.uid);
     if (targets.length) {

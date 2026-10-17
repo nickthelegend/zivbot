@@ -53,3 +53,20 @@ export function AvatarStack({ dots, size = 22 }: { dots: { avatar?: string; colo
     </span>
   );
 }
+
+/** GrokBot-style group avatar: up to four dots clustered in one circle. */
+export function AvatarCluster({ dots, size = 38 }: { dots: { avatar?: string; color?: string; uid: string }[]; size?: number }) {
+  const d = dots.slice(0, 4);
+  const small = Math.round(size * (d.length > 2 ? 0.52 : 0.62));
+  const pos = d.length === 2
+    ? [[0, 0], [size - small, size - small]]
+    : d.length === 3 ? [[(size - small) / 2, 0], [0, size - small], [size - small, size - small]]
+      : [[0, 0], [size - small, 0], [0, size - small], [size - small, size - small]];
+  return (
+    <span className="avatar-cluster" style={{ width: size, height: size }}>
+      {d.map((x, i) => (
+        <span key={x.uid} style={{ left: pos[i][0], top: pos[i][1] }}><Avatar avatar={x.avatar} color={x.color} size={small} /></span>
+      ))}
+    </span>
+  );
+}

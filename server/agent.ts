@@ -27,7 +27,7 @@ type Reply = { text: string; cards: Card[]; tools: string[]; mode: string; answe
 export type DotInfo = { uid: string; name: string; role: string; stage?: string; conv?: string; avatar?: string; color?: string };
 
 /** Run one dot over one input and return its reply (does not post it). */
-export async function think(userId: string, dot: DotInfo, conv: string, text: string, opts: { from?: string } = {}): Promise<Reply> {
+export async function think(userId: string, dot: DotInfo, conv: string, text: string, opts: { from?: string; inGroup?: boolean } = {}): Promise<Reply> {
   const g = await userGraph(userId);
   publish(userId, { type: 'thinking', dot: dot.uid, conv, on: true });
   const trace: Trace = { queries: [], touched: new Set(), onQuery: (q) => publish(userId, { type: 'step', dot: dot.uid, conv, label: q.label, ms: q.ms, rows: q.rows }) };
@@ -40,7 +40,7 @@ export async function think(userId: string, dot: DotInfo, conv: string, text: st
         try { const x = await llmTurn(ctx, dot, conv, text, opts.from); delegated.push(...x.delegated); return { text: x.text, cards: x.cards, tools: x.tools, mode: `llm:${config.llm.model}` }; }
         catch (e: any) { console.warn('[llm] falling back to planner:', e.message); }
       }
-      return { ...(await plan(ctx, text, { dot, from: opts.from, delegate: async (to, goal) => { const x = await messageDot(userId, dot, to, goal); if (x.answer) delegated.push(x.answer); return x; } })), mode: 'graph-planner' };
+      return { ...(await plan(ctx, text, { dot, from: opts.from, inGroup: opts.inGroup, delegate: async (to, goal) => { const x = await messageDot(userId, dot, to, goal); if (x.answer) delegated.push(x.answer); return x; } })), mode: 'graph-planner' };
     });
   } catch (e: any) {
     console.error('[turn]', e);
@@ -71,7 +71,7 @@ export async function handleUserMessage(userId: string, convUid: string, text: s
   const responders = pickResponders(dots, text);
   publish(userId, { type: 'working', conv: convUid, dots: responders.map((d) => d.name) });
   const replies = await Promise.all(responders.map(async (d) => {
-    const r = await think(userId, d, convUid, text);
+    const r = await think(userId, d, convUid, text, { inGroup: responders.length > 1 });
     return postMessage(userId, g, { conv: convUid, role: 'assistant', dot: d.uid, text: r.text, cards: r.cards, answer: r.answer });
   }));
   publish(userId, { type: 'working', conv: convUid, dots: [] });
@@ -228,7 +228,7 @@ async function onboarding(userId: string, g: UserGraph, dot: DotInfo, text: stri
     const pretty = raw[0].toUpperCase() + raw.slice(1);
     await updateDot(g, dot.uid, { name: pretty, stage: 'onboard:connect' });
     publish(userId, { type: 'dots' });
-    await say(`${pretty} it is! Nice to meet you.`);
+    await say(`${pretty} it is! Nice to meet you.`, [{ type: 'customize' }]);
     await postMessage(userId, g, { conv: dot.conv!, role: 'system', text: `Renamed to ${pretty}` });
     await say(ABOUT_ME);
     return say("Connect your workspace and I'll find something I can take care of right away. Nothing gets sent without your approval. Or tell me what you need help with.", [{ type: 'connectors' }]);

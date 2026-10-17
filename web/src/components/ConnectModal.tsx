@@ -4,6 +4,8 @@ import { useStore, set, toast, loadConnectors } from '../store';
 import { AppIcon, Icon } from './icons';
 
 const CATS = ['All', 'Agents', 'Workspace', 'Communication', 'Productivity', 'Code', 'Research', 'Sales', 'Finance', 'Notifications'];
+const CHIPS = ['All', 'Agents', 'Productivity', 'Communication', 'Code'];
+const MORE = CATS.filter((c) => !CHIPS.includes(c));
 
 /** GrokBot-style "Connect Apps": search, categories, Add / Connect per app. */
 export function ConnectModal() {
@@ -12,6 +14,7 @@ export function ConnectModal() {
   const [q, setQ] = useState('');
   const [cat, setCat] = useState('All');
   const [config, setConfig] = useState<string | null>(null);
+  const [more, setMore] = useState(false);
   const connected = connectors.filter((c) => c.status === 'connected');
   const filtered = useMemo(() => connectors.filter((c) => (cat === 'All' || c.category === cat) && (!q || `${c.name} ${c.description} ${c.category}`.toLowerCase().includes(q.toLowerCase()))), [connectors, q, cat]);
   if (!open) return null;
@@ -30,10 +33,16 @@ export function ConnectModal() {
           <button className="icon-btn" onClick={() => set({ connectOpen: false })}><Icon.close size={18} /></button>
         </div>
         <div className="modal-search">
-          <div className="search-box"><Icon.search size={16} /><input autoFocus placeholder="Search across apps and agents" value={q} onChange={(e) => setQ(e.target.value)} /></div>
-          <button className="btn ghost sm" onClick={() => set({ connectOpen: false, newDotOpen: true })}><Icon.users size={15} /> Dot templates</button>
+          <div className="search-box"><Icon.search size={16} /><input autoFocus placeholder="Search across apps and skills" value={q} onChange={(e) => setQ(e.target.value)} /></div>
+          <button className="btn templates" onClick={() => set({ connectOpen: false, newDotOpen: true })}><span className="tpl-dot" /> Dot templates <Icon.external size={13} /></button>
         </div>
-        <div className="cat-chips">{CATS.map((c) => <button key={c} className={cat === c ? 'on' : ''} onClick={() => setCat(c)}>{c}</button>)}</div>
+        <div className="cat-chips">
+          {CHIPS.map((c) => <button key={c} className={cat === c ? 'on' : ''} onClick={() => setCat(c)}>{c}</button>)}
+          <div className="menu-anchor">
+            <button className={MORE.includes(cat) ? 'on' : ''} onClick={() => setMore(!more)}>{MORE.includes(cat) ? cat : 'More'} <Icon.down size={13} /></button>
+            {more && <div className="menu down" onMouseLeave={() => setMore(false)}>{MORE.map((c) => <button key={c} onClick={() => { setCat(c); setMore(false); }}>{c}</button>)}</div>}
+          </div>
+        </div>
         <div className="modal-body">
           {groups.filter(([, list]) => list.length).map(([title, list]) => (
             <section key={title}>

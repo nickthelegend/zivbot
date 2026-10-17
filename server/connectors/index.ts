@@ -15,7 +15,7 @@ import { MissingConfig, type ConnectorDef, type ConnectorCtx } from './types.ts'
 
 export const demoConnector: ConnectorDef = {
   id: 'demo',
-  name: 'Lumen Labs demo workspace',
+  name: 'Lumen Labs',
   category: 'Workspace',
   description: 'A complete synthetic company — Gmail, Calendar, Slack, Notion, Linear and a real git repo — to see ZivBot work end to end.',
   icon: 'zivbot',

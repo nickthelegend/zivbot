@@ -461,3 +461,93 @@ textarea.draft-body { resize: vertical; outline: none; }
 .pair-body { display: flex; flex-direction: column; align-items: center; gap: 14px; text-align: center; padding-bottom: 26px; }
 .pair-qr { background: #fff; border-radius: 18px; padding: 14px; }
 .pair-url { font-family: 'JetBrains Mono', monospace; font-size: 12px; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; word-break: break-all; user-select: all; }
+
+/* ================================================================ GrokBot / ChatGPT-dots fidelity pass */
+.side-top { justify-content: flex-end; padding: 14px 14px 10px; min-height: 58px; }
+.side-actions { gap: 8px; }
+.side-actions .icon-btn.round { width: 36px; height: 36px; background: var(--chip); }
+.conv { padding: 10px 10px; gap: 12px; }
+.conv-name { font-weight: 600; font-size: 15px; letter-spacing: -0.005em; }
+.conv-prev { font-size: 13.5px; }
+.avatar-cluster { position: relative; display: inline-block; flex: none; }
+.avatar-cluster > span { position: absolute; border-radius: 50%; box-shadow: 0 0 0 1.5px var(--side); }
+.menu-anchor { position: relative; display: inline-flex; }
+.menu.down { top: 42px; bottom: auto; right: 0; left: auto; }
+.menu.up { bottom: 44px; left: 0; }
+.menu hr { border: 0; border-top: 1px solid var(--line); margin: 4px 2px; }
+.menu-head { padding: 8px 10px 6px; font-weight: 600; font-size: 13px; color: var(--muted); }
+.me-avatar { border: 0; cursor: pointer; }
+.side-bottom { padding: 12px 14px 16px; }
+.connect-pill { padding: 10px 16px; font-size: 14.5px; }
+
+/* connector card (GrokBot) */
+.connector-wrap { width: 100%; max-width: 560px; display: flex; flex-direction: column; gap: 6px; }
+.connector-card { display: flex; align-items: center; gap: 14px; background: var(--bubble); border-radius: 18px; padding: 14px 16px; width: 100%; max-width: 560px; }
+.connector-card .app-icon { border-radius: 12px; }
+.connector-card .row-title { font-weight: 600; font-size: 15px; display: flex; align-items: center; }
+.connector-card .row-sub { font-size: 13.5px; }
+.text-btn { color: var(--text-2); font-size: 14px; padding: 6px 8px; border-radius: 8px; }
+.text-btn:hover { color: var(--text); }
+.btn.manage { background: var(--bubble-2); border: 1px solid var(--line-2); border-radius: 12px; padding: 8px 14px; font-size: 14px; }
+.btn.manage:hover { background: var(--hover); }
+.connector-wrap .fine { padding: 2px 16px 0; font-size: 12.5px; }
+.customize-chip { display: inline-flex; align-items: center; gap: 8px; padding: 9px 16px; border-radius: 20px; background: var(--bubble); color: #6ea8ff; font-weight: 500; }
+.customize-chip:hover { background: var(--hover); }
+:root[data-theme='light'] .customize-chip { color: #2563eb; }
+
+/* right panel (ChatGPT dots) */
+.profile { padding: 50px 14px 14px 0; display: flex; flex-direction: column; gap: 12px; }
+.profile-card { margin-top: 0; border-radius: 24px; padding: 20px; gap: 12px; background: var(--panel); }
+.profile-card.small { padding: 14px 18px; gap: 8px; }
+.profile-name { font-size: 18px; }
+.profile-buttons .btn.tile { padding: 11px 10px; border-radius: 14px; font-weight: 500; }
+.btn.tile.live { background: var(--ok); color: #0b2b16; border-color: var(--ok); }
+.btn.white.sm { padding: 5px 14px; border-radius: 20px; font-weight: 600; }
+.section-title { font-size: 13.5px; margin-top: 10px; }
+.section-title.first { margin-top: 0; align-items: center; }
+.computer { width: 100%; text-align: left; padding: 4px 0; align-items: center; }
+.computer .bar { height: 7px; margin-top: 8px; background: var(--hover); }
+.computer .bar i { background: var(--line-2); }
+.computer .bar i.busy { background: linear-gradient(90deg, var(--accent), var(--accent-2)); animation: barpulse 1.4s ease-in-out infinite; }
+@keyframes barpulse { 50% { opacity: .55; } }
+.screen { width: 84px; height: 50px; border-radius: 9px; }
+.muted-line.row { display: flex; gap: 8px; align-items: center; }
+.spinner.idle { border-top-color: var(--muted); animation-duration: 2.4s; }
+.graph-footer { width: 100%; text-align: left; border-top: 0; padding-top: 4px; }
+
+/* floating pet (GrokBot) */
+.mascot { display: none; }
+.pet { position: fixed; right: 18px; top: 30vh; z-index: 30; display: flex; flex-direction: column; align-items: flex-end; gap: 10px; }
+.pet.collapsed { top: auto; bottom: 110px; }
+.pet-ziv { margin-right: 26px; filter: drop-shadow(0 8px 12px rgba(0,0,0,.35)); transition: transform .15s; }
+.pet-bar { display: flex; background: var(--panel); border: 1px solid var(--line-2); border-radius: 14px; padding: 3px; box-shadow: var(--shadow); }
+.pet-bar button { width: 38px; height: 32px; display: grid; place-items: center; border-radius: 10px; color: var(--text-2); }
+.pet-bar button:hover { background: var(--hover); color: var(--text); }
+.pet-bar button + button { border-left: 1px solid var(--line); border-radius: 0 10px 10px 0; }
+.pet-bar button:nth-child(2) { border-radius: 0; }
+.pet-bar button.live { color: var(--ok); }
+.pet-toast { display: flex; gap: 10px; align-items: flex-start; text-align: left; width: 330px; background: var(--panel); border: 1px solid var(--line-2); border-radius: 18px; padding: 10px 14px; box-shadow: var(--shadow); animation: rise .3s ease-out; }
+.pet-toast b { display: block; font-size: 13.5px; }
+.pet-toast small { display: block; font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 270px; }
+.pet-toast .dot-ok { width: 16px; height: 16px; display: grid; place-items: center; color: #0b2b16; margin-top: 1px; box-shadow: none; }
+.pet-pc { position: fixed; right: 44px; bottom: 120px; z-index: 29; filter: drop-shadow(0 8px 12px rgba(0,0,0,.35)); }
+.app.with-right .pet { top: auto; bottom: 92px; right: 350px; transform: scale(.72); transform-origin: bottom right; }
+.app.with-right .pet-toast, .app.with-right .pet-pc { display: none; }
+.flip-v { transform: rotate(180deg); }
+
+/* call */
+.call-bar { max-width: 960px; width: calc(100% - 48px); margin: 0 auto 8px; display: flex; align-items: center; gap: 12px; padding: 10px 12px 10px 14px; border-radius: 20px; background: color-mix(in srgb, var(--ok) 10%, var(--panel)); border: 1px solid color-mix(in srgb, var(--ok) 35%, var(--line-2)); }
+.call-bar b { display: block; font-size: 14px; }
+.call-bar small { display: block; font-size: 12.5px; }
+.call-orb { border-radius: 50%; padding: 3px; }
+.call-orb.listening { box-shadow: 0 0 0 0 color-mix(in srgb, var(--ok) 60%, transparent); animation: ring 1.6s infinite; }
+@keyframes ring { 70% { box-shadow: 0 0 0 10px transparent; } }
+.btn.end { background: var(--bad); color: #fff; border-radius: 16px; padding: 7px 16px; }
+
+/* connect modal */
+.btn.templates { background: var(--chip); border: 1px solid var(--line-2); border-radius: 20px; padding: 7px 14px; font-size: 13.5px; }
+.tpl-dot { width: 14px; height: 14px; border-radius: 50%; background: var(--text); display: inline-block; }
+.cat-chips .menu-anchor > button { display: inline-flex; gap: 4px; align-items: center; padding: 6px 12px; border-radius: 18px; background: var(--chip); border: 1px solid var(--line); font-size: 13px; }
+.cat-chips .menu-anchor > button.on { background: var(--white-btn); color: var(--white-btn-text); }
+.cat-chips .menu.down { left: 0; right: auto; min-width: 180px; z-index: 5; }
+@media (max-width: 760px) { .pet, .pet-pc { display: none; } .call-bar { width: calc(100% - 20px); } }

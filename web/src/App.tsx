@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { useStore, set, boot } from './store';
 import { Sidebar } from './components/Sidebar';
 import { Chat } from './components/Chat';
@@ -19,9 +19,7 @@ export function App() {
   const view = useStore((s) => s.view);
   const rightOpen = useStore((s) => s.rightOpen);
   const mobileList = useStore((s) => s.mobileList);
-  const [theme, setTheme] = useState<'dark' | 'light'>(() => {
-    try { return (localStorage.getItem('zivbot.theme') as 'dark' | 'light') || 'dark'; } catch { return 'dark'; }
-  });
+  const theme = useStore((s) => s.theme);
   useEffect(() => { void boot(); }, []);
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -42,8 +40,7 @@ export function App() {
       <main className="main">
         {view !== 'chat' && <button className="mobile-home icon-btn round" onClick={() => set({ view: 'chat', mobileList: true })} aria-label="Back to chats"><Icon.chevron size={16} className="flip" /></button>}
         <div className="top-tools">
-          <button className="icon-btn round" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} title="Theme">{theme === 'dark' ? <Icon.sun size={16} /> : <Icon.moon size={16} />}</button>
-          {view === 'chat' && <button className="icon-btn round" onClick={() => set({ rightOpen: !rightOpen })} title="Profile panel"><Icon.panel size={16} /></button>}
+          {view === 'chat' && <button className={`icon-btn ${rightOpen ? 'on' : ''}`} onClick={() => set({ rightOpen: !rightOpen })} title="Dot details"><Icon.panel size={17} /></button>}
         </div>
         {view === 'chat' && <Chat />}
         {view === 'graph' && <GraphView />}

@@ -26,6 +26,28 @@ function brand(slug: string) {
 export function AppIcon({ slug, size = 36 }: { slug: string; size?: number }) {
   const b = brand(slug);
   const dark = ['111111', '000000', '181717', '24292F'].includes(b.hex.toUpperCase());
+  if (slug === 'slack') {
+    const P = ({ x, y, w, h, c }: { x: number; y: number; w: number; h: number; c: string }) => <rect x={x} y={y} width={w} height={h} rx={1.65} fill={c} />;
+    return (
+      <span className="app-icon" style={{ width: size, height: size }}>
+        <svg viewBox="0 0 24 24" width={size * 0.62} height={size * 0.62} aria-hidden>
+          <P x={5.4} y={12.6} w={3.3} h={8.6} c="#E01E5A" /><P x={2} y={12.6} w={3.3} h={3.3} c="#E01E5A" />
+          <P x={2.8} y={5.4} w={8.6} h={3.3} c="#36C5F0" /><P x={8.1} y={2} w={3.3} h={3.3} c="#36C5F0" />
+          <P x={15.3} y={2.8} w={3.3} h={8.6} c="#2EB67D" /><P x={18.7} y={8.1} w={3.3} h={3.3} c="#2EB67D" />
+          <P x={12.6} y={15.3} w={8.6} h={3.3} c="#ECB22E" /><P x={12.6} y={18.7} w={3.3} h={3.3} c="#ECB22E" />
+        </svg>
+      </span>
+    );
+  }
+  if (slug === 'openai') {
+    return (
+      <span className="app-icon" style={{ width: size, height: size }}>
+        <svg viewBox="0 0 24 24" width={size * 0.6} height={size * 0.6} aria-hidden fill="none" stroke="#111" strokeWidth="1.7">
+          {[0, 60, 120].map((r) => <ellipse key={r} cx="12" cy="12" rx="9" ry="4.2" transform={`rotate(${r} 12 12)`} />)}
+        </svg>
+      </span>
+    );
+  }
   if (slug === 'zivbot') {
     return (
       <span className="app-icon" style={{ width: size, height: size, background: '#ff7a1a' }}>

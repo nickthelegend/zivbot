@@ -16,6 +16,7 @@ export function CardView({ card, conv, answered, latest }: { card: Card; conv: s
     case 'graph': return <GraphCard card={card} />;
     case 'agents': return <AgentsCard />;
     case 'note': return <div className="note-chip"><Icon.check size={14} /> {card.text}</div>;
+    case 'customize': return <CustomizeChip />;
     case 'file': return <FileCard card={card} />;
     case 'exchange': return null;
   }
@@ -43,36 +44,54 @@ function OptionsCard({ card, conv, answered, latest }: { card: Extract<Card, { t
   );
 }
 
+/** GrokBot's connector card: big logo, name + verified tick, status, "Add Account" and "Manage". */
 function ConnectorsCard() {
   const connectors = useStore((s) => s.connectors);
   const progress = useStore((s) => s.connectorProgress);
+  const dots = useStore((s) => s.dots);
   const demo = connectors.find((c) => c.id === 'demo');
-  const connected = connectors.filter((c) => c.status === 'connected' && !c.id.startsWith('agent-'));
-  const agents = connectors.filter((c) => c.id.startsWith('agent-') && c.status === 'connected');
+  const live = connectors.filter((c) => c.status === 'connected' && c.mode === 'live' && !c.id.startsWith('agent-') && c.auth === 'key');
   const syncing = demo?.status === 'syncing';
+  const connected = demo?.status === 'connected';
+  const accounts = (connected ? 1 : 0) + live.length;
+  const name = dots[0]?.name || 'Ziv';
   return (
-    <div className="connector-card">
-      <div className="connector-row">
-        <AppIcon slug="zivbot" size={40} />
+    <div className="connector-wrap">
+      <div className="connector-card">
+        <AppIcon slug="gmail" size={44} />
         <div className="grow">
-          <div className="row-title">Lumen Labs workspace <span className="pill-mini">demo</span></div>
-          <div className="row-sub">
-            {demo?.status === 'connected' ? `Connected · Gmail, Calendar, Slack, Notion, Linear, Git` : syncing ? progress.demo || 'Connecting…' : 'Synthetic company · mail, calendar, Slack, Notion, Linear, git'}
-          </div>
+          <div className="row-title">Gmail <Verified /></div>
+          <div className="row-sub">{connected ? `Connected · ${accounts} Account${accounts > 1 ? 's' : ''}` : syncing ? progress.demo || 'Connecting…' : 'Lumen Labs demo · with Calendar, Slack, Notion, Linear'}</div>
         </div>
-        {demo?.status === 'connected' ? (
-          <span className="ok-tag"><Icon.check size={14} /> Connected</span>
+        {connected ? (
+          <>
+            <button className="text-btn" onClick={() => set({ connectOpen: true })}>Add Account</button>
+            <button className="btn manage" onClick={() => set({ connectOpen: true })}>Manage</button>
+          </>
         ) : (
-          <button className="btn primary sm" disabled={syncing} onClick={() => void api.connect('demo').catch((e) => toast(e.message))}>{syncing ? 'Connecting…' : 'Connect'}</button>
+          <button className="btn manage" disabled={syncing} onClick={() => void api.connect('demo').catch((e) => toast(e.message))}>{syncing ? 'Connecting…' : 'Connect'}</button>
         )}
       </div>
-      <div className="connector-row">
-        <span className="icon-stack">{['gmail', 'slack', 'notion', 'linear', 'github'].map((s) => <AppIcon key={s} slug={s} size={22} />)}</span>
-        <div className="grow"><div className="row-sub">{connected.length} apps · {agents.length} agent subscriptions connected</div></div>
-        <button className="btn ghost sm" onClick={() => set({ connectOpen: true })}>Browse apps</button>
-      </div>
-      <div className="fine">Ziv always asks before making changes. Disconnect at any time.</div>
+      <div className="fine">{name} always asks before making changes. Disconnect at any time.</div>
     </div>
+  );
+}
+
+function Verified() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" aria-label="verified" style={{ marginLeft: 6 }}>
+      <path fill="#1d9bf0" d="M12 1.5l2.6 1.9 3.2-.2 1 3 2.7 1.8-1 3 1 3-2.7 1.8-1 3-3.2-.2L12 22.5l-2.6-1.9-3.2.2-1-3L2.5 16l1-3-1-3 2.7-1.8 1-3 3.2.2z" />
+      <path d="m7.5 12.2 3 3 6-6.4" stroke="#fff" strokeWidth="2.2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+/** ChatGPT dots' "Customize your dot ›" chip. */
+function CustomizeChip() {
+  return (
+    <button className="customize-chip" onClick={() => set({ rightOpen: true, customizeOpen: true })}>
+      <Icon.users size={16} /> Customize your dot <Icon.chevron size={14} />
+    </button>
   );
 }
 

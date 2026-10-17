@@ -1,10 +1,11 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { Message } from '../api';
-import { useStore, set, send, openConversation } from '../store';
+import { useStore, set, get, send, openConversation } from '../store';
 import { Avatar, AvatarStack } from './Avatar';
 import { CardView, ExchangeChip, useDotMap } from './Cards';
 import { Markdown } from './Markdown';
 import { Icon } from './icons';
+import { CallBar } from './CallBar';
 
 export function Chat() {
   const active = useStore((s) => s.active);
@@ -49,6 +50,7 @@ export function Chat() {
           {!!working?.length && working.length > 1 && <div className="working-line"><AvatarStack dots={working.map((n) => [...dotMap.values()].find((d) => d.name === n)!).filter(Boolean)} size={16} /> {working[0]}{working.length > 1 ? ` and ${working.length - 1} other${working.length > 2 ? 's' : ''}` : ''} {working.length > 1 ? 'are' : 'is'} working.</div>}
         </div>
       </div>
+      <CallBar conv={active} name={isGroup ? conv.name : dot?.name || 'your dot'} avatar={dot?.avatar} color={dot?.color} messages={list} />
       <Composer conv={active} placeholder={onboarding ? 'Type your answer, or talk about something else' : `Message ${isGroup ? conv.name : dot?.name || ''}`} />
     </div>
   );
@@ -163,7 +165,7 @@ function Composer({ conv, placeholder }: { conv: string; placeholder: string }) 
         {text.trim() ? (
           <button className="send-btn" onClick={submit} title="Send"><Icon.send size={17} /></button>
         ) : (
-          <button className="send-btn voice" onClick={dictate} title="Talk"><Icon.wave size={17} /></button>
+          <button className="send-btn voice" onClick={() => set({ call: !get().call })} title="Talk to your dot"><Icon.wave size={17} /></button>
         )}
       </div>
     </div>

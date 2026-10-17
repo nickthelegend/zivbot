@@ -62,7 +62,7 @@ app.get('/api/events', (c) => {
   return streamSSE(c, async (stream) => {
     await stream.writeSSE({ event: 'ping', data: '{}' });
     const off = subscribe(id, (e) => void stream.writeSSE({ data: JSON.stringify(e) }).catch(() => {}));
-    const ping = setInterval(() => void stream.writeSSE({ event: 'ping', data: '{}' }).catch(() => {}), 15_000);
+    const ping = setInterval(() => void stream.writeSSE({ event: 'ping', data: '{}' }).catch(() => {}), 10_000);
     await new Promise<void>((res) => stream.onAbort(() => res()));
     clearInterval(ping);
     off();

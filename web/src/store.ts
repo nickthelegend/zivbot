@@ -35,6 +35,9 @@ export type State = {
   toast?: { text: string; at: number };
   /** phone layout: showing the conversation list instead of a chat */
   mobileList: boolean;
+  theme: 'dark' | 'light';
+  call: boolean;
+  customizeOpen: boolean;
 };
 
 let state: State = {
@@ -42,6 +45,9 @@ let state: State = {
   messages: {}, thinking: {}, working: {}, runs: {}, connectors: [], connectorProgress: {}, draftStatus: {}, connectOpen: false, newDotOpen: false,
   rightOpen: typeof window !== 'undefined' ? window.innerWidth > 1200 : true,
   mobileList: true,
+  theme: (() => { try { return (localStorage.getItem('zivbot.theme') as 'dark' | 'light') || 'dark'; } catch { return 'dark'; } })(),
+  call: false,
+  customizeOpen: false,
 };
 const subs = new Set<() => void>();
 export const get = () => state;
@@ -93,6 +99,13 @@ export async function send(conv: string, text: string) {
   const t = text.trim();
   if (!t) return;
   await api.send(conv, t);
+  // If the live stream missed the reply (sleeping laptop, proxy restart), catch up.
+  const before = get().messages[conv]?.length || 0;
+  for (const ms of [4000, 10000, 25000]) {
+    setTimeout(() => {
+      if ((get().messages[conv]?.length || 0) <= before + 1) void api.messages(conv).then((r) => set((s) => ({ messages: { ...s.messages, [conv]: r.messages } }))).catch(() => {});
+    }, ms);
+  }
 }
 
 /** Inside the Android/iOS app: hand notifications to the native side. */

@@ -10,6 +10,7 @@ export type Card =
   | { type: 'graph'; title?: string; focus?: string[] }
   | { type: 'agents' }
   | { type: 'note'; text: string }
+  | { type: 'customize' }
   | { type: 'file'; uid: string; name: string; size: number }
   | { type: 'exchange'; conv: string; with: { uid: string; name: string; avatar?: string; color?: string }; count: number; verb: 'messaged' | 'with' };
 
@@ -113,6 +114,6 @@ export function events(onEvent: (e: any) => void, onReconnect?: () => void) {
     es.onerror = () => { es?.close(); setTimeout(open, 2000); };
   };
   open();
-  const watchdog = setInterval(() => { if (Date.now() - last > 40_000) open(); }, 5000);
+  const watchdog = setInterval(() => { if (Date.now() - last > 25_000) open(); }, 5000);
   return () => { stopped = true; clearInterval(watchdog); es?.close(); };
 }

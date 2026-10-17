@@ -21,6 +21,7 @@ export type Card =
   | { type: 'graph'; title?: string; focus?: string[] }
   | { type: 'agents' }
   | { type: 'note'; text: string }
+  | { type: 'customize' }
   | { type: 'file'; uid: string; name: string; size: number }
   | { type: 'exchange'; conv: string; with: { uid: string; name: string; avatar?: string; color?: string }; count: number; verb: 'messaged' | 'with' };
 
