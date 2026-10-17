@@ -46,6 +46,16 @@ export async function approveDraft(userId: string, g: UserGraph, draftUid: strin
     await link(g, 'Draft', 'BECAME', 'Run', [{ from: draftUid, to: run }]);
     result = `Started ${kind} on "${payload.goal}".`;
     if (conv) await postMessage(userId, g, { conv, role: 'assistant', dot, text: `On it — **${payload.goal}** is running with ${kind}. I'll report back when the tests finish.`, cards: [{ type: 'run', runUid: run }] });
+  } else if (d.d.kind === 'reassign') {
+    await g.q(
+      `MATCH (t:Ticket {uid:$t}) OPTIONAL MATCH (t)-[old:ASSIGNED_TO]->() DELETE old
+       WITH DISTINCT t MATCH (p:Person {uid:$to}) MERGE (t)-[:ASSIGNED_TO {at: $now, by: 'zivbot'}]->(p)
+       WITH t, p OPTIONAL MATCH (f:Person {uid:$from}) FOREACH (_ IN CASE WHEN f IS NULL THEN [] ELSE [1] END | MERGE (t)-[:PREVIOUSLY_ASSIGNED_TO]->(f))`,
+      { t: payload.ticket, to: payload.to, from: payload.from ?? '', now: Date.now() },
+      'move the ticket to its new owner',
+    );
+    result = `${payload.key} now belongs to ${d.d.to}.`;
+    if (conv) await postMessage(userId, g, { conv, role: 'system', text: `Reassigned ${payload.key} to ${d.d.to}` });
   } else if (d.d.kind === 'mcp') {
     const out = payload.mcp === false ? await runConnectorAction(userId, g, payload.server, payload.tool, payload.args) : await callMcpTool(g, payload.server, payload.tool, payload.args);
     result = `Called ${payload.tool}: ${out.slice(0, 300)}`;

@@ -124,7 +124,7 @@ async function overloaded(g: UserGraph): Promise<InsightSection> {
     detail: `${r.keys.length} open ticket${r.keys.length > 1 ? 's' : ''} and ${r.meetings} meeting${r.meetings === 1 ? '' : 's'} in the next two days.`,
     uids: [r.uid, ...r.tuids],
     severity: r.keys.length >= 2 ? 'medium' : 'low',
-    ask: `Fix ${r.keys[0]}`,
+    ask: `Who should take ${r.keys[0]}?`,
   }));
   return { key: 'load', title: 'Overloaded', blurb: 'People the graph says are stretched', items };
 }

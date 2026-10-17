@@ -28,7 +28,7 @@ export type Card =
   | { type: 'file'; uid: string; name: string; size: number }
   | { type: 'exchange'; conv: string; with: { uid: string; name: string; avatar?: string; color?: string }; count: number; verb: 'messaged' | 'with' };
 
-export type DraftView = { uid: string; kind: 'email' | 'event' | 'run' | 'decision' | 'mcp'; status: string; title: string; to?: string; subject?: string; body?: string; when?: string; agent?: string; choices?: RouteChoice[]; detail?: string };
+export type DraftView = { uid: string; kind: 'email' | 'event' | 'run' | 'decision' | 'mcp' | 'reassign'; status: string; title: string; to?: string; subject?: string; body?: string; when?: string; agent?: string; choices?: RouteChoice[]; detail?: string };
 
 export type Ctx = { g: UserGraph; userId: string; dot: string };
 export type ToolResult = { text: string; cards?: Card[]; data?: unknown };
@@ -625,6 +625,63 @@ export const tools: Tool[] = [
       if (Number.isNaN(t)) t = await firstFreeSlot(g, [...people.map((p) => p.uid), (await me(g)).uid], minutes);
       const d = await draftNode(g, { kind: 'event', title, when: when(t), to: people.map((p) => p.name).join(', '), dot, payload: { title, attendees: people.map((p) => p.uid), start: t, minutes }, links: people.map((p) => ({ rel: 'INVITES', to: p.uid })) });
       return { text: `Proposed **${title}** ${when(t)} with ${people.map((p) => p.name).join(', ')} — the first slot nobody has a clash.`, cards: [{ type: 'draft', draft: { uid: d, kind: 'event', status: 'pending', title, to: people.map((p) => p.name).join(', '), when: when(t) } }] };
+    },
+  },
+
+  {
+    name: 'propose_reassign',
+    description: 'Rebalance work using the graph: for a ticket, rank people by how well they know the affected systems (commits, docs, tickets, projects) minus their current load (open tickets, meetings in the next 2 days), and propose moving it to the best one. Needs approval.',
+    params: { type: 'object', properties: { ticket: { type: 'string' } }, required: ['ticket'] },
+    async run({ g, dot }, { ticket }) {
+      const t = await resolve(g, ticket, ['Ticket']);
+      if (!t) return { text: `I couldn't find ticket ${ticket}.` };
+      const cur = await g.one(`MATCH (t:Ticket {uid:$u}) OPTIONAL MATCH (t)-[:ASSIGNED_TO]->(a:Person) RETURN t.key AS key, t.title AS title, a.uid AS who, a.name AS whoName`, { u: t.uid }, 'current owner');
+      const cands = await g.q(
+        `MATCH (t:Ticket {uid:$u})-[:AFFECTS]->(s:System)
+         MATCH (p:Person) WHERE NOT coalesce(p.external, false) AND NOT coalesce(p.me, false)
+         OPTIONAL MATCH (p)<-[:AUTHORED_BY]-(c:Commit)-[:TOUCHES]->(:File)-[:IN_REPO]->(:Repo)-[:IMPLEMENTS]->(s)
+         WITH t, s, p, count(DISTINCT c) AS commits
+         OPTIONAL MATCH (p)-[:OWNS]->(d:Doc)-[:ABOUT]->(s)
+         WITH t, s, p, commits, count(DISTINCT d) AS docs
+         OPTIONAL MATCH (p)<-[:ASSIGNED_TO]-(past:Ticket)-[:AFFECTS]->(s) WHERE past <> t
+         WITH t, p, sum(commits) AS commits, sum(docs) AS docs, count(DISTINCT past) AS tickets
+         OPTIONAL MATCH (p)-[:WORKS_ON]->(:Project)-[:USES]->(:System)<-[:AFFECTS]-(t)
+         WITH p, commits, docs, tickets, count(*) > 0 AS onProject
+         OPTIONAL MATCH (p)<-[:ASSIGNED_TO]-(open:Ticket {status:'open'})
+         WITH p, commits, docs, tickets, onProject, count(DISTINCT open) AS load
+         OPTIONAL MATCH (p)-[:ATTENDS]->(e:Event) WHERE e.start > $now AND e.start < $soon
+         RETURN p.uid AS uid, p.name AS name, p.role AS role, commits, docs, tickets, onProject, load, count(DISTINCT e) AS meetings`,
+        { u: t.uid, now: Date.now(), soon: Date.now() + 2 * DAY },
+        'candidates: knowledge of the affected systems vs current load',
+      );
+      const scored = cands
+        .map((c) => ({ ...c, know: 3 * c.commits + 3 * c.docs + 2 * c.tickets + (c.onProject ? 1 : 0), cost: 2 * c.load + 0.5 * c.meetings }))
+        .map((c) => ({ ...c, score: +(c.know - c.cost).toFixed(1) }))
+        .filter((c) => c.know > 0)
+        .sort((a, b) => b.score - a.score);
+      const best = scored.find((c) => c.uid !== cur?.who);
+      if (!best) return { text: `Nobody else in the graph knows the systems ${cur?.key} touches — keep it with ${cur?.whoName || 'its owner'}.` };
+      const n = (k: number, w: string) => `${k} ${w}${k === 1 ? '' : 's'}`;
+      const why = (c: any) => [c.commits && n(c.commits, 'commit'), c.docs && n(c.docs, 'doc'), c.tickets && n(c.tickets, 'past ticket'), `${c.load} open`, n(c.meetings, 'meeting') + ' soon'].filter(Boolean).join(', ');
+      const curRow = scored.find((c) => c.uid === cur?.who);
+      const d = await draftNode(g, {
+        kind: 'reassign', title: `Reassign ${cur.key} to ${best.name}`, to: best.name, dot,
+        detail: `${cur.key} · ${cur.title}`,
+        body: `${best.name}: ${why(best)} (score ${best.score})${curRow ? `\n${cur.whoName}: ${why(curRow)} (score ${curRow.score})` : ''}`,
+        payload: { ticket: t.uid, from: cur?.who, to: best.uid, key: cur.key },
+        links: [{ rel: 'FOR_TICKET', to: t.uid }, { rel: 'PROPOSES', to: best.uid }],
+      });
+      const ownerBest = scored[0]?.uid === cur?.who;
+      return {
+        text: ownerBest
+          ? `**${cur.whoName}** is still the best fit for ${cur.key} (${why(curRow)}). If you want it off their plate, **${best.name}** is next — ${why(best)}.`
+          : `**${best.name}** is the best owner for ${cur.key} right now — ${why(best)}.${curRow ? ` ${cur.whoName} has ${why(curRow)}.` : ''}`,
+        cards: [
+          { type: 'list', title: 'Who could take it', items: scored.slice(0, 4).map((c) => ({ title: `${c.name} · score ${c.score}`, subtitle: why(c), uid: c.uid, badge: c.uid === cur?.who ? 'owner' : c.uid === best.uid ? 'best' : 'option', tone: c.uid === best.uid ? 'green' : 'gray' })) },
+          { type: 'draft', draft: { uid: d, kind: 'reassign', status: 'pending', title: `Reassign ${cur.key} to ${best.name}`, to: best.name, detail: `${cur.key} · ${cur.title}`, body: `${best.name}: ${why(best)} (score ${best.score})${curRow ? `\n${cur.whoName}: ${why(curRow)} (score ${curRow.score})` : ''}` } },
+        ],
+        data: { best, scored },
+      };
     },
   },
 

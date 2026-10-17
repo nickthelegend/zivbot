@@ -152,3 +152,16 @@ test('graph algorithms as tools: PageRank, betweenness, WCC, BFS reach, weighted
   assert.deepEqual(sp.paths![0].names, ['mobile-app', 'payments-api', 'billing-db']);
   await assert.rejects(runAlgorithm(g, { algorithm: 'pagerank', label: 'Person) DETACH DELETE (x', rel: 'X' }), /Unknown label/);
 });
+
+test('graph-driven action: reassign a ticket to whoever knows the system with room to take it', async () => {
+  const r = await run('propose_reassign', { ticket: 'LUM-139' });
+  const d = r.data as any;
+  assert.ok(d.best && d.best.uid !== 'person:raj', `best should not be the current owner, got ${d.best?.name}`);
+  const draft = (r.cards || []).find((c: any) => c.type === 'draft') as any;
+  const { approveDraft } = await import('../server/actions.ts');
+  await approveDraft(USER, g, draft.draft.uid);
+  const now = await g.one(`MATCH (:Ticket {uid:'ticket:LUM-139'})-[:ASSIGNED_TO]->(p:Person) RETURN collect(p.uid) AS who`);
+  assert.deepEqual(now.who, [d.best.uid]);
+  const prev = await g.one(`MATCH (:Ticket {uid:'ticket:LUM-139'})-[:PREVIOUSLY_ASSIGNED_TO]->(p:Person) RETURN p.uid AS uid`);
+  assert.equal(prev.uid, 'person:raj');
+});

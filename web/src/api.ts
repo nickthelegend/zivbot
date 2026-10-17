@@ -15,7 +15,7 @@ export type Card =
   | { type: 'exchange'; conv: string; with: { uid: string; name: string; avatar?: string; color?: string }; count: number; verb: 'messaged' | 'with' };
 
 export type Draft = {
-  uid: string; kind: 'email' | 'event' | 'run' | 'decision' | 'mcp'; status: string; title: string;
+  uid: string; kind: 'email' | 'event' | 'run' | 'decision' | 'mcp' | 'reassign'; status: string; title: string;
   to?: string; subject?: string; body?: string; when?: string; agent?: string; detail?: string;
   choices?: { agent: string; kind: string; name: string; score: number; reasons: string[]; installed: boolean }[];
 };

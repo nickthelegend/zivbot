@@ -151,6 +151,12 @@ export async function plan(ctx: Ctx, input: string, opts: PlanOpts = {}): Promis
     return done(await writeBrief(ctx, call, ents[0]));
   }
 
+  if (/\b(reassign|rebalance|who should (take|own|handle|pick up)|hand .* to someone|move .* to someone)\b/.test(low)) {
+    const key = t.match(/\b([A-Z]{2,6}-\d+)\b/i)?.[1]?.toUpperCase();
+    const tk = key ? `ticket:${key}` : first('Ticket')?.uid;
+    if (tk) return done((await call('propose_reassign', { ticket: tk })).text);
+  }
+
   if (/\bwho\b.*\b(knows?|worked|works|owns?|expert|familiar|touched|wrote)\b/.test(low)) {
     const x = first('System', 'Project', 'Repo', 'Org', 'Ticket') || (await search(ctx.g, t.replace(/who|knows?|about|worked on|owns?/gi, ''), ['System', 'Project', 'Repo', 'File'], 1)).map((r) => ({ uid: r.uid, label: r.label }))[0];
     if (x) return done((await call('who_knows', { ref: x.uid })).text);
