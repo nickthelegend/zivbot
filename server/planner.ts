@@ -254,6 +254,11 @@ export async function plan(ctx: Ctx, input: string, opts: PlanOpts = {}): Promis
     if (p?.uid) return done((await composeReply(ctx, call, p.uid)).text);
   }
 
+  if (/\b(good at|skills?|best at|strong(est)? at|track record)\b/.test(low) && /\b(agents?|codex|claude|cursor|opencode|grok|antigravity|fleet|subscriptions?)\b/.test(low)) {
+    const a = low.match(/\b(codex|claude|cursor|opencode|grok|antigravity)\b/)?.[1];
+    return done((await call('agent_skills', { agent: a })).text);
+  }
+
   if (/\b(agents?|subscriptions?|codex|claude|cursor|opencode|grok|antigravity|fleet)\b/.test(low)) {
     return done(`Here's your agent fleet — the subscriptions on my computer I can hand work to:\n${(await call('list_agents')).text}`);
   }

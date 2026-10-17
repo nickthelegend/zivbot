@@ -100,25 +100,38 @@ export type RouteChoice = { agent: string; kind: AgentKind; name: string; score:
  * on those systems and on their direct dependencies, overall record, quota
  * state, and Procedures where the user said which agent they prefer.
  */
+/**
+ * The fleet's skill graph: (Agent)-[:SKILLED_IN {wins, losses, score}]->(System),
+ * derived from finished runs. score is Laplace-smoothed: (wins+1)/(runs+2).
+ */
+export async function refreshSkills(g: UserGraph) {
+  await g.q(`MATCH (:Agent)-[s:SKILLED_IN]->() DELETE s`, {}, '~reset skill edges');
+  await g.q(
+    `MATCH (a:Agent)<-[:EXECUTED_BY]-(r:Run)-[:WORKED_ON]->(sys:System) WHERE r.status IN ['succeeded', 'failed']
+     WITH a, sys, count(CASE WHEN r.status = 'succeeded' THEN 1 END) AS wins, count(CASE WHEN r.status = 'failed' THEN 1 END) AS losses, max(r.endedAt) AS lastAt
+     MERGE (a)-[s:SKILLED_IN]->(sys)
+     SET s.wins = wins, s.losses = losses, s.lastAt = lastAt, s.score = (wins + 1.0) / (wins + losses + 2.0)`,
+    {},
+    'derive the agent skill graph from runs',
+  );
+}
+
 export async function routeJob(g: UserGraph, systems: string[]): Promise<RouteChoice[]> {
+  await refreshSkills(g);
   const rows = await g.q(
     `MATCH (a:Agent)
-     OPTIONAL MATCH (a)<-[:EXECUTED_BY]-(r:Run)-[:WORKED_ON]->(s:System) WHERE s.uid IN $systems
-     WITH a, collect(r) AS here
-     OPTIONAL MATCH (a)<-[:EXECUTED_BY]-(r2:Run)-[:WORKED_ON]->(:System)-[:DEPENDS_ON]-(n:System) WHERE n.uid IN $systems
-     WITH a, here, collect(DISTINCT r2) AS near
-     OPTIONAL MATCH (a)<-[:EXECUTED_BY]-(r3:Run) WHERE r3.status IN ['succeeded','failed']
-     WITH a, here, near, collect(r3) AS all
+     OPTIONAL MATCH (a)-[s:SKILLED_IN]->(x:System) WHERE x.uid IN $systems
+     WITH a, sum(coalesce(s.wins, 0)) AS wins, sum(coalesce(s.losses, 0)) AS losses
+     OPTIONAL MATCH (a)-[s2:SKILLED_IN]->(:System)-[:DEPENDS_ON]-(n:System) WHERE n.uid IN $systems
+     WITH a, wins, losses, sum(coalesce(s2.wins, 0)) AS nearWins
+     OPTIONAL MATCH (a)-[s3:SKILLED_IN]->()
+     WITH a, wins, losses, nearWins, sum(coalesce(s3.wins, 0)) AS allWins, sum(coalesce(s3.wins, 0) + coalesce(s3.losses, 0)) AS allRuns
      OPTIONAL MATCH (p:Procedure)-[pref:PREFERS]->(a)
      RETURN a.uid AS agent, a.kind AS kind, a.name AS name, a.installed AS installed,
-            coalesce(a.limitedUntil, 0) AS limitedUntil,
-            size([x IN here WHERE x.status = 'succeeded']) AS wins,
-            size([x IN here WHERE x.status = 'failed']) AS losses,
-            size([x IN near WHERE x.status = 'succeeded']) AS nearWins,
-            size([x IN all WHERE x.status = 'succeeded']) AS allWins, size(all) AS allRuns,
+            coalesce(a.limitedUntil, 0) AS limitedUntil, wins, losses, nearWins, allWins, allRuns,
             sum(CASE WHEN pref IS NULL THEN 0 ELSE pref.weight END) AS preference`,
     { systems },
-    'route job: score agents by graph history',
+    'route job: score agents on the skill graph',
   );
   const now = Date.now();
   return rows.map((r) => {

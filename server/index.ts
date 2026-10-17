@@ -13,7 +13,7 @@ import { handleUserMessage, afterConnect } from './agent.ts';
 import { listDots, listConversations, history, createDot, createGroup, updateDot, markRead, getConversation, DOT_PRESETS, postMessage } from './memory.ts';
 import { catalogFor, connect, disconnect } from './connectors/index.ts';
 import { approveDraft, rejectDraft } from './actions.ts';
-import { routeJob, syncFleet } from './fleet.ts';
+import { routeJob, syncFleet, refreshSkills } from './fleet.ts';
 import { toolByName, search as graphSearch, resolve as resolveRef } from './tools.ts';
 import { startProactive, scanUser } from './proactive.ts';
 import { LABEL_META } from './schema.ts';
@@ -181,6 +181,19 @@ app.get('/api/runs/:id', async (c) => {
   const r = await g.one(`MATCH (r:Run {uid:$u}) OPTIONAL MATCH (r)-[:EXECUTED_BY]->(a:Agent) RETURN r, a.name AS agent`, { u: c.req.param('id') });
   if (!r) throw new HttpError(404, 'no such run');
   return c.json({ ...r.r, agent: r.agent });
+});
+
+app.get('/api/fleet/skills', async (c) => {
+  const g = await userGraph(user(c));
+  await refreshSkills(g);
+  const nodes = await g.q(
+    `MATCH (a:Agent)-[:SKILLED_IN]->(x:System) WITH collect(DISTINCT a) + collect(DISTINCT x) AS ns UNWIND ns AS n
+     RETURN n.uid AS id, [l IN labels(n) WHERE NOT l IN ['Searchable','Memorable']][0] AS label, n.name AS name`,
+    {},
+    'skill graph nodes',
+  );
+  const edges = await g.q(`MATCH (a:Agent)-[s:SKILLED_IN]->(x:System) RETURN a.uid AS source, x.uid AS target, 'SKILLED_IN' AS type, s.score AS score, s.wins AS wins, s.losses AS losses`, {}, 'skill graph edges');
+  return c.json({ nodes, edges });
 });
 
 app.get('/api/fleet', async (c) => {

@@ -3,6 +3,7 @@ import { api } from '../api';
 import { useStore, set } from '../store';
 import { RunCard } from './Cards';
 import { AppIcon, Icon } from './icons';
+import { ForceGraph } from './ForceGraph';
 
 /** Everything the dots did and want to do: approvals, runs on your agents, routing. */
 export function ActivityView() {
@@ -13,6 +14,8 @@ export function ActivityView() {
   const [rules, setRules] = useState<Awaited<ReturnType<typeof api.rules>> | null>(null);
   const loadRules = () => void api.rules().then(setRules).catch(() => {});
   useEffect(loadRules, []);
+  const [skills, setSkills] = useState<Awaited<ReturnType<typeof api.skills>> | null>(null);
+  useEffect(() => { void api.skills().then(setSkills).catch(() => {}); }, [runs]);
   useEffect(() => {
     void api.drafts().then(setDrafts);
     void api.fleet().then(setFleet).catch(() => {});
@@ -76,6 +79,17 @@ export function ActivityView() {
           </div>
         ))}
         <button className="btn ghost sm" onClick={() => set({ connectOpen: true })}><Icon.plus size={14} /> Connect another agent</button>
+        {skills && skills.nodes.length > 0 && (
+          <>
+            <h2>Skill graph</h2>
+            <div className="muted-line"><code>(Agent)-[:SKILLED_IN]-&gt;(System)</code> learned from every run; routing reads it.</div>
+            <div className="skill-graph"><ForceGraph nodes={skills.nodes.map((n) => ({ ...n, rank: n.label === 'Agent' ? 1 : 0.4 }))} edges={skills.edges} height={260} labels="all" sizeBy="rank" spread={0.65} wheel={false} /></div>
+            {skills.edges.slice(0, 8).map((e, i) => {
+              const a = skills.nodes.find((n) => n.id === e.source)?.name, x = skills.nodes.find((n) => n.id === e.target)?.name;
+              return <div key={i} className="skill-row"><b>{a}</b> → {x}<span className="grow" /><code>{e.wins}✓ {e.losses}✗ · {(e.score * 100).toFixed(0)}%</code></div>;
+            })}
+          </>
+        )}
       </div>
     </div>
   );

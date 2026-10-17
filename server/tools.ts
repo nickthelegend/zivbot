@@ -1,6 +1,6 @@
 import type { UserGraph, Row } from './graph.ts';
 import { upsertNodes, link, linkAny, loadDictionary, mentionsIn } from './ingest.ts';
-import { routeJob, type RouteChoice } from './fleet.ts';
+import { routeJob, refreshSkills, type RouteChoice } from './fleet.ts';
 import { uid, ago, when, clip, DAY, HOUR } from './util.ts';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -652,6 +652,30 @@ export const tools: Tool[] = [
       return {
         text: rows.map((r) => `- **${r.name}** (${r.plan}) — ${r.installed ? `installed ${r.version}` : 'not installed'}${r.limitedUntil > Date.now() ? ', out of quota' : ''}; ${r.wins}/${r.runs} runs succeeded`).join('\n'),
         cards: [{ type: 'agents' }],
+        data: rows,
+      };
+    },
+  },
+
+  {
+    name: 'agent_skills',
+    description: 'What each of my coding-agent subscriptions is good at: the skill graph (Agent)-[:SKILLED_IN {wins, losses, score}]->(System) learned from past runs.',
+    params: { type: 'object', properties: { agent: { type: 'string' } } },
+    async run({ g }, { agent }) {
+      await refreshSkills(g);
+      const rows = await g.q(
+        `MATCH (a:Agent)-[s:SKILLED_IN]->(x:System) WHERE $agent = '' OR toLower(a.name) CONTAINS toLower($agent) OR a.kind = $agent
+         RETURN a.uid AS auid, a.name AS agent, x.uid AS suid, x.name AS system, s.wins AS wins, s.losses AS losses, s.score AS score
+         ORDER BY agent, score DESC`,
+        { agent: agent || '' },
+        'agent skill graph',
+      );
+      if (!rows.length) return { text: 'No finished runs yet — the skill graph fills in as your agents work.' };
+      const by = new Map<string, any[]>();
+      for (const r of rows) by.set(r.agent, [...(by.get(r.agent) || []), r]);
+      return {
+        text: [...by].map(([a, rs]) => `**${a}** — ${rs.map((r) => `${r.system} ${r.wins}✓${r.losses ? ` ${r.losses}✗` : ''}`).join(', ')}`).join('\n'),
+        cards: [{ type: 'graph', title: 'Agent skill graph', focus: [...new Set(rows.flatMap((r) => [r.auid, r.suid]))] }],
         data: rows,
       };
     },

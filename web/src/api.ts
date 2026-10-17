@@ -78,6 +78,7 @@ export const api = {
   drafts: () => req<any[]>('/api/drafts'),
   runs: () => req<Run[]>('/api/runs'),
   run: (id: string) => req<Run>(`/api/runs/${id}`),
+  skills: () => req<{ nodes: GraphNode[]; edges: (GraphEdge & { score: number; wins: number; losses: number })[] }>('/api/fleet/skills'),
   fleet: () => req<{ agents: any[]; routing: any[] }>('/api/fleet'),
   graph: (q: { focus?: string[]; ids?: string[]; labels?: string[]; limit?: number; rel?: string } = {}) =>
     req<{ nodes: GraphNode[]; edges: GraphEdge[] }>(`/api/graph?${new URLSearchParams({ ...(q.focus ? { focus: q.focus.join(',') } : {}), ...(q.ids ? { ids: q.ids.join(',') } : {}), ...(q.labels?.length ? { labels: q.labels.join(',') } : {}), ...(q.limit ? { limit: String(q.limit) } : {}), ...(q.rel ? { rel: q.rel } : {}) })}`),
