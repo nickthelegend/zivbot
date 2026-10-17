@@ -24,6 +24,21 @@ import { RULE_KINDS, listRules, createRule, setRuleActive, evaluateRules } from 
 const ROOT = process.env.ZIV_ROOT || resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const app = new Hono();
 
+// The web app may be served from another origin (Vercel) than this API.
+app.use('/api/*', async (c, next) => {
+  const origin = c.req.header('origin');
+  const allowed = origin && (config.corsOrigins.includes('*') || config.corsOrigins.includes(origin) || /^https:\/\/zivbot[a-z0-9-]*\.vercel\.app$/.test(origin));
+  if (allowed) {
+    c.header('access-control-allow-origin', origin);
+    c.header('vary', 'origin');
+    c.header('access-control-allow-headers', 'content-type, x-ziv-user');
+    c.header('access-control-allow-methods', 'GET, POST, PATCH, DELETE, OPTIONS');
+    c.header('access-control-max-age', '86400');
+  }
+  if (c.req.method === 'OPTIONS') return c.body(null, allowed ? 204 : 403);
+  await next();
+});
+
 const user = (c: Context) => {
   const id = c.req.header('x-ziv-user') || c.req.query('user');
   if (!id || !/^[a-zA-Z0-9_-]{6,64}$/.test(id)) throw new HttpError(401, 'missing user');
@@ -40,7 +55,7 @@ app.onError((e, c) => {
 app.get('/api/health', async (c) => {
   let falkordb = 'down';
   try { await (await falkor()).list(); falkordb = 'up'; } catch { /* down */ }
-  return c.json({ ok: falkordb === 'up', falkordb, brain: llmEnabled() ? `llm:${config.llm.model}` : 'graph-planner' });
+  return c.json({ ok: falkordb === 'up', falkordb, hosted: config.hosted, brain: llmEnabled() ? `llm:${config.llm.model}` : 'graph-planner' });
 });
 
 app.post('/api/session', async (c) => {

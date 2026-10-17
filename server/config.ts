@@ -12,6 +12,9 @@ const env = process.env;
 
 export const config = {
   port: Number(env.PORT || 8787),
+  /** Public web deploy: no local paths, no spawned processes, CORS for the web origin. */
+  hosted: env.ZIV_HOSTED === '1',
+  corsOrigins: (env.ZIV_CORS_ORIGINS || '').split(',').map((s) => s.trim()).filter(Boolean),
   falkorUrl: env.FALKORDB_URL || `redis://${env.FALKORDB_HOST || 'localhost'}:${env.FALKORDB_PORT || 6379}`,
   falkorUsername: env.FALKORDB_USERNAME || undefined,
   falkorPassword: env.FALKORDB_PASSWORD || undefined,

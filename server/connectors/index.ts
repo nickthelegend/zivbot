@@ -1,3 +1,4 @@
+import { config } from '../config.ts';
 import { userGraph, type UserGraph } from '../graph.ts';
 import { upsertNodes, link } from '../ingest.ts';
 import { publish } from '../bus.ts';
@@ -92,6 +93,9 @@ export async function connectorById(id: string) {
   return (await catalog()).find((c) => c.id === id);
 }
 
+/** Connectors that read local paths or spawn processes; refused on a hosted deploy. */
+export const DESKTOP_ONLY = new Set(['mcp', 'git', 'docs-folder']);
+
 /** Catalog + this user's status for each connector (never returns secret values). */
 export async function catalogFor(userId: string) {
   const g = await userGraph(userId);
@@ -106,7 +110,7 @@ export async function catalogFor(userId: string) {
       fields: (c.fields || []).map((f) => ({ key: f.key, label: f.label, secret: !!f.secret, placeholder: f.placeholder, optional: !!f.optional, env: f.env, help: f.help })),
       configured: configuredFields(userId, c.id, c.fields),
       actions: (c.actions || []).map((a) => ({ name: a.name, description: a.description, mutates: a.mutates })),
-      status: agent ? (agent.installed ? 'connected' : 'not installed') : s?.status || 'available',
+      status: agent ? (agent.installed ? 'connected' : 'not installed') : config.hosted && DESKTOP_ONLY.has(c.id) ? 'desktop only' : s?.status || 'available',
       mode: s?.mode, lastSync: s?.lastSync, counts: s?.counts ? JSON.parse(s.counts) : undefined, error: s?.error, version: agent?.version,
     };
   });
@@ -117,6 +121,7 @@ export async function catalogFor(userId: string) {
 export async function connect(userId: string, id: string, values: Record<string, string> = {}) {
   const def = await connectorById(id);
   if (!def) throw new Error(`unknown connector ${id}`);
+  if (config.hosted && DESKTOP_ONLY.has(id)) throw new Error(`${def.name} reads your own machine, so it runs in the desktop app only`);
   if (Object.keys(values).length) saveConnectorConfig(userId, id, values);
   const g = await userGraph(userId);
   const cuid = `connector:${id}`;

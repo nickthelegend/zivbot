@@ -1,3 +1,4 @@
+import { config } from './config.ts';
 import type { UserGraph } from './graph.ts';
 import { upsertNodes, link } from './ingest.ts';
 import { dispatchRun, type AgentKind } from './fleet.ts';
@@ -42,6 +43,10 @@ export async function approveDraft(userId: string, g: UserGraph, draftUid: strin
     await link(g, 'Person', 'ATTENDS', 'Event', payload.attendees.map((p: string) => ({ from: p, to: e })));
     await link(g, 'Draft', 'BECAME', 'Event', [{ from: draftUid, to: e }]);
     result = `Booked ${payload.title} for ${when(payload.start)}.`;
+  } else if (d.d.kind === 'run' && config.hosted) {
+    // Coding agents run on the user's own subscriptions, on the user's own machine.
+    result = `Queued "${payload.goal}" for the desktop app — coding agents run on your machine, not on the web demo.`;
+    if (conv) await postMessage(userId, g, { conv, role: 'assistant', dot, text: `This is the web demo, so I can't start ${edits.agent || payload.kind} here — your coding agents run on your own machine with your own subscriptions. Open ZivBot desktop and approve **${payload.goal}** there.` });
   } else if (d.d.kind === 'run') {
     const kind = (edits.agent || payload.kind) as AgentKind;
     const run = await dispatchRun(userId, g, { ...payload, kind, dot, answer: undefined });

@@ -44,7 +44,7 @@ export let userId: string | null = (() => {
   } catch { return pair; }
 })();
 
-export const API_BASE: string = (window as any).ZIVBOT_API || '';
+export const API_BASE: string = ((window as any).ZIVBOT_API || import.meta.env.VITE_API_BASE || '').replace(/\/$/, '');
 
 async function req<T>(path: string, body?: unknown, method?: string): Promise<T> {
   const r = await fetch(API_BASE + path, {
