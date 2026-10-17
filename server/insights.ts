@@ -31,9 +31,9 @@ async function staleKnowledge(g: UserGraph): Promise<InsightSection> {
   const rows = await g.q(
     `MATCH (d:Doc)-[:ABOUT]->(s:System)<-[:AFFECTS]-(t:Ticket)
      WHERE d.at IS NOT NULL AND t.at > d.at AND NOT coalesce(d.output, false)
-     WITH d, s, collect(DISTINCT t.key) AS since, max(t.at) AS newest
+     WITH d, collect(DISTINCT s.name) AS systems, collect(DISTINCT t.key) AS since, max(t.at) AS newest
      OPTIONAL MATCH (o:Person)-[:OWNS]->(d)
-     RETURN d.uid AS uid, d.title AS title, s.name AS system, since, newest, d.at AS written, o.name AS owner, o.uid AS ouid`,
+     RETURN d.uid AS uid, d.title AS title, systems, since, newest, d.at AS written, o.name AS owner, o.uid AS ouid`,
     {},
     'docs older than the incidents on their systems',
   );
@@ -41,10 +41,10 @@ async function staleKnowledge(g: UserGraph): Promise<InsightSection> {
     key: 'stale', title: 'Knowledge going stale', blurb: 'Docs written before the latest incidents on their systems',
     items: rows.map((r) => ({
       title: `${r.title} predates ${r.since.join(', ')}`,
-      detail: `Written ${Math.round((Date.now() - r.written) / DAY)}d ago about ${r.system}; ${r.since.length} incident${r.since.length > 1 ? 's' : ''} since.${r.owner ? ` Owner: ${r.owner}.` : ''}`,
+      detail: `Written ${Math.round((Date.now() - r.written) / DAY)}d ago about ${r.systems.join(', ')}; ${r.since.length} incident${r.since.length > 1 ? 's' : ''} since.${r.owner ? ` Owner: ${r.owner}.` : ''}`,
       uids: [r.uid, ...(r.ouid ? [r.ouid] : [])],
       severity: (r.title.toLowerCase().includes('runbook') ? 'high' : 'low') as 'high' | 'low',
-      ask: `Who knows ${r.system}?`,
+      ask: `Who knows ${r.systems[0]}?`,
     })),
   };
 }
