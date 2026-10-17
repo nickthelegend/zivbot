@@ -10,6 +10,7 @@ import { insights } from './insights.ts';
 import { runAlgorithm, ALGORITHMS, type AlgoName } from './algorithms.ts';
 import { RULE_KINDS, kindFromText, createRule, evaluateRules } from './rules.ts';
 import { timeline } from './timeline.ts';
+import { findDuplicates } from './identity.ts';
 
 /**
  * Graph tools — the agent's hands. The LLM agent, the offline planner and the
@@ -31,7 +32,7 @@ export type Card =
   | { type: 'file'; uid: string; name: string; size: number }
   | { type: 'exchange'; conv: string; with: { uid: string; name: string; avatar?: string; color?: string }; count: number; verb: 'messaged' | 'with' };
 
-export type DraftView = { uid: string; kind: 'email' | 'event' | 'run' | 'decision' | 'mcp' | 'reassign'; status: string; title: string; to?: string; subject?: string; body?: string; when?: string; agent?: string; choices?: RouteChoice[]; detail?: string };
+export type DraftView = { uid: string; kind: 'email' | 'event' | 'run' | 'decision' | 'mcp' | 'reassign' | 'merge'; status: string; title: string; to?: string; subject?: string; body?: string; when?: string; agent?: string; choices?: RouteChoice[]; detail?: string };
 
 export type Ctx = { g: UserGraph; userId: string; dot: string };
 export type ToolResult = { text: string; cards?: Card[]; data?: unknown };
@@ -551,6 +552,34 @@ export const tools: Tool[] = [
         text: rows.length ? `You never reply to these senders:\n${rows.map((r) => `- **${r.name}** (${r.email}) — ${r.n} email${r.n > 1 ? 's' : ''}, last ${ago(r.last)}`).join('\n')}` : 'Your inbox is clean.',
         cards: [{ type: 'list', title: 'Unsubscribe candidates', items: rows.map((r) => ({ title: r.name, subtitle: `${r.n} emails · last ${ago(r.last)}`, uid: r.uid, badge: 'newsletter', tone: 'gray' })) }],
         data: rows,
+      };
+    },
+  },
+
+  {
+    name: 'find_duplicates',
+    description: 'Find people who are probably the same human split across apps (e.g. a Slack handle and a directory entry): name similarity confirmed by overlap of their 2-hop working context in the graph. Proposes merges for approval.',
+    params: { type: 'object', properties: {} },
+    async run({ g, dot }) {
+      const pairs = await findDuplicates(g);
+      if (!pairs.length) return { text: 'No duplicate identities found — every person in the graph looks like one human.' };
+      const cards: Card[] = [];
+      for (const p of pairs.slice(0, 3)) {
+        // keep the richer, directory-backed node
+        const [keep, dup] = (p.a.email || '').endsWith('lumenlabs.example') || (p.a.name.includes(' ') && !p.b.name.includes(' ')) ? [p.a, p.b] : [p.b, p.a];
+        const d = await draftNode(g, {
+          kind: 'merge', title: `Merge ${dup.name} into ${keep.name}`, to: keep.name, dot,
+          detail: `name match ${Math.round(p.nameSim * 100)}% · shared context ${Math.round(p.jaccard * 100)}%`,
+          body: `Both connect to: ${p.shared.join(', ')}`,
+          payload: { keep: keep.uid, dup: dup.uid },
+          links: [{ rel: 'PROPOSES', to: keep.uid }],
+        });
+        cards.push({ type: 'draft', draft: { uid: d, kind: 'merge', status: 'pending', title: `Merge ${dup.name} into ${keep.name}`, to: keep.name, detail: `name match ${Math.round(p.nameSim * 100)}% · shared context ${Math.round(p.jaccard * 100)}%`, body: `Both connect to: ${p.shared.join(', ')}` } });
+      }
+      return {
+        text: `These look like the same person in different apps:\n${pairs.slice(0, 3).map((p) => `- **${p.a.name}** and **${p.b.name}** — both work on ${p.shared.slice(0, 4).join(', ')} (score ${p.score})`).join('\n')}\n\nMerging moves every relationship onto one node, so answers stop missing half of what they did.`,
+        cards: [...cards, { type: 'graph', title: 'Same person?', focus: pairs.slice(0, 3).flatMap((p) => [p.a.uid, p.b.uid]) }],
+        data: pairs,
       };
     },
   },

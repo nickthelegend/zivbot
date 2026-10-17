@@ -200,3 +200,22 @@ test('timeline: the story of a ticket in order, with who acted', async () => {
   assert.equal(items[0].who, 'Kate Morgan', 'it starts with Kate writing in');
   assert.ok(items.some((i) => i.name.endsWith('— created')));
 });
+
+test('identity: the Slack handle and the directory entry are one person; merging rewires the graph', async () => {
+  const { findDuplicates, mergePeople } = await import('../server/identity.ts');
+  const pairs = await findDuplicates(g);
+  const p = pairs.find((x) => [x.a.name, x.b.name].sort().join('|') === ['Priya Raman', 'priya.r'].sort().join('|'));
+  assert.ok(p, `expected priya.r ≈ Priya Raman, got ${pairs.map((x) => `${x.a.name}~${x.b.name}`).join(', ')}`);
+  assert.ok(!pairs.some((x) => [x.a.name, x.b.name].includes('Kate Morgan')), 'no false positives on unrelated people');
+  const r = await mergePeople(g, 'person:priya', 'person:priyaslack');
+  assert.equal(r.merged, 'priya.r');
+  const posted = await g.one(`MATCH (:Person {uid:'person:priya'})-[:POSTED]->(m:ChatMessage) WHERE m.text CONTAINS 'draft index' RETURN count(m) AS n`);
+  assert.equal(posted.n, 1, 'the Slack message now hangs off Priya');
+  assert.equal((await g.one(`MATCH (p:Person {uid:'person:priyaslack'}) RETURN count(p) AS n`)).n, 0);
+});
+
+test('stale knowledge: a runbook older than the incidents on its system', async () => {
+  const { insights } = await import('../server/insights.ts');
+  const stale = (await insights(g)).find((s) => s.key === 'stale');
+  assert.ok(stale?.items.some((i) => /billing-db failover runbook/.test(i.title) && i.severity === 'high'));
+});

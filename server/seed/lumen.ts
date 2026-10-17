@@ -31,6 +31,8 @@ export const people: PersonSeed[] = [
   { key: 'cloudco', name: 'CloudCo Offers', email: 'promo@cloudco.example', role: 'Newsletter' },
   { key: 'growthhq', name: 'GrowthHQ Webinars', email: 'events@growthhq.example', role: 'Newsletter' },
   { key: 'trust', name: 'TrustWatch Compliance', email: 'alerts@trustwatch.example', role: 'Vendor' },
+  // Slack-only handle for Priya (a different workspace email) — the same human, split across apps
+  { key: 'priyaslack', name: 'priya.r', email: 'priya.r@lumen-slack.example', role: 'Slack member' },
 ];
 
 export const teams = [
@@ -141,6 +143,7 @@ export const channels = ['incidents', 'eng', 'launch', 'general'];
 export const chat = [
   { channel: 'incidents', from: 'tom', at: -6 * HOUR, text: 'Invoice page p95 is 2.3s, Brightwave is complaining (LUM-142).' },
   { channel: 'incidents', from: 'priya', at: -5 * HOUR, text: 'Looks like the invoice list in payments-api runs one query per line item — classic N+1. I am in back-to-backs today though.' },
+  { channel: 'incidents', from: 'priyaslack', at: -5 * HOUR + 600_000, text: 'Pushed a draft index on billing-db for the invoice query, but payments-api still loops per line item. LUM-142 needs the batching fix.' },
   { channel: 'incidents', from: 'raj', at: -4 * HOUR, text: 'I can look tomorrow, swamped with OTA auth work for LUM-131.' },
   { channel: 'eng', from: 'priya', at: -10 * DAY, text: 'Decision: we are moving billing from Chargebee to Stripe Billing (Atlas). RFC-012 has the details.', decision: { key: 'd-stripe', text: 'Move billing from Chargebee to Stripe Billing', about: ['atlas', 'stripe'], approvedBy: 'marcus' } },
   { channel: 'eng', from: 'marcus', at: -10 * DAY + HOUR, text: '+1, approved. Let us target end of October for cutover.' },

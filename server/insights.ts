@@ -1,5 +1,6 @@
 import type { UserGraph } from './graph.ts';
 import { DAY } from './util.ts';
+import { findDuplicates } from './identity.ts';
 
 /**
  * Graph-wide insights: the questions nobody asks until it's too late.
@@ -11,10 +12,41 @@ export type InsightItem = { title: string; detail: string; uids: string[]; sever
 export type InsightSection = { key: string; title: string; blurb: string; items: InsightItem[] };
 
 export async function insights(g: UserGraph, since = Date.now() - DAY): Promise<InsightSection[]> {
-  const [bus, spof, groups, load, waiting, changed, fleet] = await Promise.all([
-    busFactor(g), singlePoints(g), workingGroups(g), overloaded(g), waitingOnYou(g), whatChanged(g, since), fleetHealth(g),
+  const [bus, spof, groups, load, waiting, changed, fleet, dups, stale] = await Promise.all([
+    busFactor(g), singlePoints(g), workingGroups(g), overloaded(g), waitingOnYou(g), whatChanged(g, since), fleetHealth(g), duplicates(g), staleKnowledge(g),
   ]);
-  return [bus, spof, waiting, load, groups, changed, fleet].filter((s) => s.items.length);
+  return [bus, spof, waiting, stale, load, dups, groups, changed, fleet].filter((s) => s.items.length);
+}
+
+async function duplicates(g: UserGraph): Promise<InsightSection> {
+  const pairs = await findDuplicates(g);
+  return {
+    key: 'dups', title: 'Same person, two nodes', blurb: 'Identities split across apps (name + shared context)',
+    items: pairs.slice(0, 4).map((p) => ({ title: `${p.a.name} ≈ ${p.b.name}`, detail: `Both connect to ${p.shared.slice(0, 3).join(', ')} · score ${p.score}`, uids: [p.a.uid, p.b.uid], severity: 'medium' as const, ask: 'Find duplicate people' })),
+  };
+}
+
+/** Docs about a system that are older than the newest incident on it — likely out of date. */
+async function staleKnowledge(g: UserGraph): Promise<InsightSection> {
+  const rows = await g.q(
+    `MATCH (d:Doc)-[:ABOUT]->(s:System)<-[:AFFECTS]-(t:Ticket)
+     WHERE d.at IS NOT NULL AND t.at > d.at AND NOT coalesce(d.output, false)
+     WITH d, s, collect(DISTINCT t.key) AS since, max(t.at) AS newest
+     OPTIONAL MATCH (o:Person)-[:OWNS]->(d)
+     RETURN d.uid AS uid, d.title AS title, s.name AS system, since, newest, d.at AS written, o.name AS owner, o.uid AS ouid`,
+    {},
+    'docs older than the incidents on their systems',
+  );
+  return {
+    key: 'stale', title: 'Knowledge going stale', blurb: 'Docs written before the latest incidents on their systems',
+    items: rows.map((r) => ({
+      title: `${r.title} predates ${r.since.join(', ')}`,
+      detail: `Written ${Math.round((Date.now() - r.written) / DAY)}d ago about ${r.system}; ${r.since.length} incident${r.since.length > 1 ? 's' : ''} since.${r.owner ? ` Owner: ${r.owner}.` : ''}`,
+      uids: [r.uid, ...(r.ouid ? [r.ouid] : [])],
+      severity: (r.title.toLowerCase().includes('runbook') ? 'high' : 'low') as 'high' | 'low',
+      ask: `Who knows ${r.system}?`,
+    })),
+  };
 }
 
 /** Systems whose knowledge sits with one person (commits, owned docs, assigned tickets). */

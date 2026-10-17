@@ -3,6 +3,8 @@ import { upsertNodes, link } from './ingest.ts';
 import { dispatchRun, type AgentKind } from './fleet.ts';
 import { callMcpTool } from './connectors/mcp.ts';
 import { runConnectorAction } from './connectors/index.ts';
+import { mergePeople } from './identity.ts';
+import { enrich } from './analytics.ts';
 import { publish } from './bus.ts';
 import { postMessage, getDot } from './memory.ts';
 import { uid, when } from './util.ts';
@@ -46,6 +48,11 @@ export async function approveDraft(userId: string, g: UserGraph, draftUid: strin
     await link(g, 'Draft', 'BECAME', 'Run', [{ from: draftUid, to: run }]);
     result = `Started ${kind} on "${payload.goal}".`;
     if (conv) await postMessage(userId, g, { conv, role: 'assistant', dot, text: `On it — **${payload.goal}** is running with ${kind}. I'll report back when the tests finish.`, cards: [{ type: 'run', runUid: run }] });
+  } else if (d.d.kind === 'merge') {
+    const r = await mergePeople(g, payload.keep, payload.dup);
+    await enrich(g);
+    result = `Merged ${r.merged} into ${r.kept} (${r.moved} relationship types moved).`;
+    if (conv) await postMessage(userId, g, { conv, role: 'system', text: `Merged ${r.merged} into ${r.kept}` });
   } else if (d.d.kind === 'reassign') {
     await g.q(
       `MATCH (t:Ticket {uid:$t}) OPTIONAL MATCH (t)-[old:ASSIGNED_TO]->() DELETE old

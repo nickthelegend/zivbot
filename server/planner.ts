@@ -182,6 +182,10 @@ export async function plan(ctx: Ctx, input: string, opts: PlanOpts = {}): Promis
     if (x) return done((await call('customer_history', { org: x.uid })).text);
   }
 
+  if (/\b(duplicates?|same person|merge (people|contacts|identities)|clean ?up (people|contacts)|dedupe)\b/.test(low)) {
+    return done((await call('find_duplicates')).text);
+  }
+
   // ---- the story of something: "what happened with LUM-139?", "timeline for Brightwave"
   if (/\b(timeline|history of|story of|what happened (with|to|on)|walk me through|how did we get here)\b/.test(low)) {
     const x = ents[0] || ((t.match(/\b([A-Z]{2,6}-\d+)\b/)?.[1]) ? { uid: `ticket:${t.match(/\b([A-Z]{2,6}-\d+)\b/)![1]}`, label: 'Ticket' } : null);

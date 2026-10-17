@@ -160,7 +160,7 @@ function DraftCard({ draft }: { draft: Draft }) {
       set((s) => ({ draftStatus: { ...s.draftStatus, [draft.uid]: { status: r.status, result: r.result } } }));
     } catch (e: any) { toast(e.message); } finally { setBusy(false); }
   };
-  const head = { email: 'Email draft', event: 'Calendar invite', run: 'Coding job', decision: 'Decision', mcp: 'App action', reassign: 'Reassign work' }[draft.kind];
+  const head = { email: 'Email draft', event: 'Calendar invite', run: 'Coding job', decision: 'Decision', mcp: 'App action', reassign: 'Reassign work', merge: 'Merge identities' }[draft.kind];
   return (
     <div className={`draft-card ${done ? 'done' : ''}`}>
       <div className="draft-head">
@@ -174,7 +174,7 @@ function DraftCard({ draft }: { draft: Draft }) {
       {draft.kind === 'email' && (editing && !done
         ? <textarea className="draft-body" value={body} onChange={(e) => setBody(e.target.value)} rows={Math.min(14, body.split('\n').length + 2)} />
         : <div className="draft-body"><Markdown text={body} /></div>)}
-      {(draft.kind === 'mcp' || draft.kind === 'reassign') && draft.body && <pre className="draft-args">{draft.body}</pre>}
+      {(draft.kind === 'mcp' || draft.kind === 'reassign' || draft.kind === 'merge') && draft.body && <pre className="draft-args">{draft.body}</pre>}
       {draft.kind === 'run' && draft.choices && (
         <div className="agent-choices">
           <div className="choices-label">Picked from your subscriptions by graph history — tap to switch</div>
