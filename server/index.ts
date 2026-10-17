@@ -1,0 +1,295 @@
+import { Hono, type Context } from 'hono';
+import { serve } from '@hono/node-server';
+import { serveStatic } from '@hono/node-server/serve-static';
+import { streamSSE } from 'hono/streaming';
+import { existsSync, readFileSync } from 'node:fs';
+import { join, dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { config, llmEnabled } from './config.ts';
+import { falkor, userGraph, listGraphs } from './graph.ts';
+import { subscribe, publish } from './bus.ts';
+import { ensureUser, ensureTeam } from './users.ts';
+import { handleUserMessage, afterConnect } from './agent.ts';
+import { listDots, listConversations, history, createDot, createGroup, updateDot, markRead, getConversation, DOT_PRESETS, postMessage } from './memory.ts';
+import { catalogFor, connect, disconnect } from './connectors/index.ts';
+import { approveDraft, rejectDraft } from './actions.ts';
+import { routeJob, syncFleet } from './fleet.ts';
+import { toolByName } from './tools.ts';
+import { startProactive, scanUser } from './proactive.ts';
+import { LABEL_META } from './schema.ts';
+
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const app = new Hono();
+
+const user = (c: Context) => {
+  const id = c.req.header('x-ziv-user') || c.req.query('user');
+  if (!id || !/^[a-zA-Z0-9_-]{6,64}$/.test(id)) throw new HttpError(401, 'missing user');
+  return id;
+};
+class HttpError extends Error { constructor(public status: number, msg: string) { super(msg); } }
+app.onError((e, c) => {
+  if (!(e instanceof HttpError)) console.error('[api]', e);
+  return c.json({ error: e.message }, (e as any).status || 500);
+});
+
+// ------------------------------------------------------------------ session & state
+
+app.get('/api/health', async (c) => {
+  let falkordb = 'down';
+  try { await (await falkor()).list(); falkordb = 'up'; } catch { /* down */ }
+  return c.json({ ok: falkordb === 'up', falkordb, brain: llmEnabled() ? `llm:${config.llm.model}` : 'graph-planner' });
+});
+
+app.post('/api/session', async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  return c.json(await ensureUser(body.userId));
+});
+
+app.get('/api/state', async (c) => {
+  const id = user(c);
+  const g = await userGraph(id);
+  const [dots, conversations, profile, pending] = await Promise.all([
+    listDots(g),
+    listConversations(g),
+    g.one(`MATCH (p:Profile) RETURN p.name AS name`),
+    g.q(`MATCH (d:Draft {status:'pending'}) RETURN count(d) AS n`),
+  ]);
+  return c.json({ dots, conversations, profile: profile || {}, pendingDrafts: pending[0]?.n || 0, brain: llmEnabled() ? `llm:${config.llm.model}` : 'graph-planner', presets: DOT_PRESETS, labels: LABEL_META });
+});
+
+app.get('/api/events', (c) => {
+  const id = user(c);
+  return streamSSE(c, async (stream) => {
+    await stream.writeSSE({ event: 'ping', data: '{}' });
+    const off = subscribe(id, (e) => void stream.writeSSE({ data: JSON.stringify(e) }).catch(() => {}));
+    const ping = setInterval(() => void stream.writeSSE({ event: 'ping', data: '{}' }).catch(() => {}), 15_000);
+    await new Promise<void>((res) => stream.onAbort(() => res()));
+    clearInterval(ping);
+    off();
+  });
+});
+
+// ------------------------------------------------------------------ dots & conversations
+
+app.get('/api/conversations/:id/messages', async (c) => {
+  const g = await userGraph(user(c));
+  const conv = await getConversation(g, c.req.param('id'));
+  await markRead(g, c.req.param('id'));
+  return c.json({ conversation: conv, messages: await history(g, c.req.param('id')) });
+});
+
+app.post('/api/conversations/:id/messages', async (c) => {
+  const id = user(c);
+  const { text } = await c.req.json();
+  if (!text?.trim()) throw new HttpError(400, 'empty message');
+  void handleUserMessage(id, c.req.param('id'), String(text).slice(0, 4000)).catch((e) => {
+    console.error('[turn]', e);
+    publish(id, { type: 'error', message: e.message });
+  });
+  return c.json({ ok: true }, 202);
+});
+
+app.post('/api/dots', async (c) => {
+  const id = user(c);
+  const g = await userGraph(id);
+  const body = await c.req.json();
+  const preset = DOT_PRESETS.find((p) => p.avatar === body.preset);
+  const p = preset || { name: String(body.name || 'New dot').slice(0, 24), avatar: body.avatar || 'ziv', color: body.color || '#ff7a1a', role: String(body.role || 'General helper').slice(0, 200) };
+  const { dot, conv } = await createDot(g, p);
+  await postMessage(id, g, { conv, role: 'assistant', dot, text: `Hi! I'm ${p.name}. ${p.role}.\n\nI share the same graph memory as your other dots. What should I start with?` });
+  publish(id, { type: 'dots' });
+  return c.json({ dot, conv });
+});
+
+app.patch('/api/dots/:id', async (c) => {
+  const id = user(c);
+  const g = await userGraph(id);
+  const b = await c.req.json();
+  const props: Record<string, string> = {};
+  for (const k of ['name', 'avatar', 'role', 'color']) if (typeof b[k] === 'string' && b[k].trim()) props[k] = b[k].trim().slice(0, 200);
+  await updateDot(g, c.req.param('id'), props);
+  publish(id, { type: 'dots' });
+  return c.json({ ok: true });
+});
+
+app.post('/api/groups', async (c) => {
+  const id = user(c);
+  const g = await userGraph(id);
+  const { dots, name } = await c.req.json();
+  if (!Array.isArray(dots) || dots.length < 2) throw new HttpError(400, 'pick at least two dots');
+  const conv = await createGroup(g, dots, name);
+  await postMessage(id, g, { conv, role: 'system', text: 'Group created. The dots whose role fits will answer.' });
+  publish(id, { type: 'dots' });
+  return c.json({ conv });
+});
+
+// ------------------------------------------------------------------ connectors
+
+app.get('/api/connectors', async (c) => c.json(await catalogFor(user(c))));
+
+app.post('/api/connectors/:cid/connect', async (c) => {
+  const id = user(c);
+  const values = await c.req.json().catch(() => ({}));
+  const cid = c.req.param('cid');
+  const r = await connect(id, cid, values || {});
+  if (r.ok && (cid === 'demo' || !cid.startsWith('agent-'))) {
+    void (async () => {
+      if (cid === 'demo') await ensureTeam(id);
+      publish(id, { type: 'dots' });
+      await afterConnect(id, r.counts || {});
+    })().catch((e) => console.error('[afterConnect]', e));
+  }
+  return c.json(r, r.ok ? 200 : 400);
+});
+
+app.post('/api/connectors/:cid/disconnect', async (c) => {
+  await disconnect(user(c), c.req.param('cid'));
+  return c.json({ ok: true });
+});
+
+// ------------------------------------------------------------------ approvals, runs, fleet
+
+app.get('/api/drafts', async (c) => {
+  const g = await userGraph(user(c));
+  const rows = await g.q(`MATCH (d:Draft) OPTIONAL MATCH (d)-[:BY]->(dot:Dot) RETURN d.uid AS uid, d.kind AS kind, d.status AS status, d.title AS title, d.to AS to, d.when AS when, d.agent AS agent, d.at AS at, d.result AS result, dot.name AS dot ORDER BY d.at DESC LIMIT 60`);
+  return c.json(rows);
+});
+app.post('/api/drafts/:id/approve', async (c) => {
+  const id = user(c);
+  const g = await userGraph(id);
+  return c.json(await approveDraft(id, g, c.req.param('id'), await c.req.json().catch(() => ({}))));
+});
+app.post('/api/drafts/:id/reject', async (c) => {
+  const id = user(c);
+  return c.json(await rejectDraft(id, await userGraph(id), c.req.param('id')));
+});
+
+app.get('/api/runs', async (c) => {
+  const g = await userGraph(user(c));
+  return c.json(await g.q(
+    `MATCH (r:Run) OPTIONAL MATCH (r)-[:EXECUTED_BY]->(a:Agent) OPTIONAL MATCH (r)-[:ASSIGNED_TO]->(d:Dot) OPTIONAL MATCH (r)-[:FOR_TICKET]->(t:Ticket)
+     RETURN r.uid AS uid, r.goal AS goal, r.status AS status, r.startedAt AS startedAt, r.endedAt AS endedAt, r.tests AS tests, r.branch AS branch, r.synthetic AS synthetic, r.kind AS kind,
+            coalesce(a.name, d.name) AS agent, coalesce(a.kind, 'dot') AS agentKind, collect(t.key) AS tickets
+     ORDER BY r.startedAt DESC LIMIT 40`,
+  ));
+});
+app.get('/api/runs/:id', async (c) => {
+  const g = await userGraph(user(c));
+  const r = await g.one(`MATCH (r:Run {uid:$u}) OPTIONAL MATCH (r)-[:EXECUTED_BY]->(a:Agent) RETURN r, a.name AS agent`, { u: c.req.param('id') });
+  if (!r) throw new HttpError(404, 'no such run');
+  return c.json({ ...r.r, agent: r.agent });
+});
+
+app.get('/api/fleet', async (c) => {
+  const g = await userGraph(user(c));
+  await syncFleet(g);
+  const agents = (await toolByName('list_agents')!.run({ g, userId: '', dot: '' }, {})).data;
+  const systems = (c.req.query('systems') || 'system:payments-api').split(',');
+  return c.json({ agents, routing: await routeJob(g, systems) });
+});
+
+// ------------------------------------------------------------------ graph, traces, memory
+
+const HIDDEN = ['Episode', 'Answer', 'Notice', 'Profile', 'Conversation', 'Draft', 'Tool', 'Connector', 'Commit'];
+const nodeShape = `n.uid AS id, [l IN labels(n) WHERE l <> 'Searchable'][0] AS label, n.name AS name, n.rank AS rank, n.criticality AS criticality, n.status AS status, n.priority AS priority, n.community AS community`;
+
+async function edgesAmong(g: Awaited<ReturnType<typeof userGraph>>, ids: string[]) {
+  return g.q(`MATCH (a)-[r]->(b) WHERE a.uid IN $ids AND b.uid IN $ids AND type(r) <> 'COLLABORATES' RETURN a.uid AS source, b.uid AS target, type(r) AS type`, { ids }, 'edges among nodes');
+}
+
+app.get('/api/graph', async (c) => {
+  const g = await userGraph(user(c));
+  const focus = (c.req.query('focus') || '').split(',').filter(Boolean);
+  const limit = Math.min(Number(c.req.query('limit') || 400), 1500);
+  let nodes;
+  if (focus.length) {
+    nodes = await g.q(
+      `MATCH (f) WHERE f.uid IN $focus
+       OPTIONAL MATCH (f)-[r]-(m) WHERE NOT any(l IN labels(m) WHERE l IN $hidden) AND type(r) <> 'COLLABORATES'
+       WITH collect(DISTINCT f) + collect(DISTINCT m) AS ns UNWIND ns AS n WITH DISTINCT n WHERE n IS NOT NULL
+       RETURN ${nodeShape} LIMIT $limit`,
+      { focus, hidden: HIDDEN, limit: Math.min(limit, 120) },
+      'neighbourhood',
+    );
+  } else {
+    const labels = (c.req.query('labels') || '').split(',').filter(Boolean);
+    nodes = await g.q(
+      `MATCH (n) WHERE NOT any(l IN labels(n) WHERE l IN $hidden) AND (size($labels) = 0 OR any(l IN labels(n) WHERE l IN $labels))
+       RETURN ${nodeShape} LIMIT $limit`,
+      { hidden: HIDDEN, labels, limit },
+      'graph overview',
+    );
+  }
+  const ids = nodes.map((n) => n.id).filter(Boolean);
+  return c.json({ nodes: nodes.map((n) => ({ ...n, focus: focus.includes(n.id) })), edges: await edgesAmong(g, ids) });
+});
+
+app.get('/api/answers/:id', async (c) => {
+  const g = await userGraph(user(c));
+  const a = await g.one(`MATCH (a:Answer {uid:$u}) OPTIONAL MATCH (a)-[:BY]->(d:Dot) RETURN a, d.name AS dot`, { u: c.req.param('id') });
+  if (!a) throw new HttpError(404, 'no such answer');
+  const used = await g.q(`MATCH (:Answer {uid:$u})-[:DELEGATED_TO*0..2]->(:Answer)-[:USED]->(n) WHERE NOT n:Episode WITH DISTINCT n RETURN ${nodeShape} LIMIT 80`, { u: c.req.param('id') });
+  const sub = await g.q(`MATCH (:Answer {uid:$u})-[:DELEGATED_TO*1..2]->(b:Answer)-[:BY]->(d:Dot) RETURN b.queries AS queries, d.name AS dot`, { u: c.req.param('id') });
+  const queries = [...JSON.parse(a.a.queries || '[]'), ...sub.flatMap((s) => JSON.parse(s.queries || '[]').map((q: any) => ({ ...q, dot: s.dot })))];
+  return c.json({ ...a.a, dot: a.dot, delegatedTo: sub.map((s) => s.dot), queries, nodes: used, edges: await edgesAmong(g, used.map((n) => n.id)) });
+});
+
+app.get('/api/entity/:uid', async (c) => {
+  const g = await userGraph(user(c));
+  const r = await toolByName('describe_entity')!.run({ g, userId: '', dot: '' }, { ref: decodeURIComponent(c.req.param('uid')) });
+  return c.json({ text: r.text, ...(r.data as object) });
+});
+
+app.get('/api/stats', async (c) => {
+  const g = await userGraph(user(c));
+  const labels = await g.q(`MATCH (n) WITH [l IN labels(n) WHERE l <> 'Searchable'][0] AS label RETURN label, count(*) AS n ORDER BY n DESC`);
+  const rels = await g.q(`MATCH ()-[r]->() RETURN type(r) AS type, count(*) AS n ORDER BY n DESC`);
+  return c.json({ graph: g.name, labels, rels, nodes: labels.reduce((s, l) => s + l.n, 0), edges: rels.reduce((s, r) => s + r.n, 0), graphs: (await listGraphs()).length });
+});
+
+app.get('/api/memory', async (c) => {
+  const g = await userGraph(user(c));
+  return c.json(await g.q(
+    `MATCH (m) WHERE (m:Fact OR m:Procedure) OPTIONAL MATCH (m)-[:ABOUT|PREFERS]->(x)
+     RETURN m.uid AS uid, [l IN labels(m) WHERE l <> 'Searchable'][0] AS kind, m.text AS text, m.at AS at, m.status AS status, collect(x.name) AS about ORDER BY m.at DESC`,
+  ));
+});
+
+app.get('/api/outputs', async (c) => {
+  const g = await userGraph(user(c));
+  return c.json(await g.q(`MATCH (d:Doc {output:true}) OPTIONAL MATCH (d)-[:WRITTEN_BY]->(dot:Dot) RETURN d.uid AS uid, d.name AS name, d.size AS size, d.at AS at, dot.name AS dot ORDER BY d.at DESC LIMIT 30`));
+});
+
+app.get('/api/files/:uid', async (c) => {
+  const g = await userGraph(user(c));
+  const d = await g.one(`MATCH (d:Doc {uid:$u, output:true}) RETURN d.path AS path, d.name AS name`, { u: c.req.param('uid') });
+  if (!d || !existsSync(d.path)) throw new HttpError(404, 'no such file');
+  return c.body(readFileSync(d.path, 'utf8'), 200, { 'content-type': 'text/markdown; charset=utf-8', 'content-disposition': `inline; filename="${d.name}"` });
+});
+
+app.post('/api/cypher', async (c) => {
+  const g = await userGraph(user(c));
+  const { cypher } = await c.req.json();
+  const r = await toolByName('run_cypher')!.run({ g, userId: '', dot: '' }, { cypher });
+  return c.json({ rows: r.data ?? [], text: r.text });
+});
+
+app.post('/api/scan', async (c) => {
+  await scanUser(user(c), true);
+  return c.json({ ok: true });
+});
+
+// ------------------------------------------------------------------ web app
+
+const dist = join(ROOT, 'dist');
+if (existsSync(dist)) {
+  app.use('/assets/*', serveStatic({ root: './dist' }));
+  app.use('/*', serveStatic({ root: './dist' }));
+  app.get('*', (c) => c.html(readFileSync(join(dist, 'index.html'), 'utf8')));
+}
+
+await falkor();
+startProactive();
+serve({ fetch: app.fetch, port: config.port, hostname: process.env.HOST || '0.0.0.0' }, (i) => {
+  console.log(`ZivBot on http://localhost:${i.port} · FalkorDB ${config.falkorUrl} · brain: ${llmEnabled() ? config.llm.model : 'graph planner'}`);
+});

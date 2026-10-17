@@ -1,0 +1,250 @@
+import type { UserGraph, Row } from './graph.ts';
+import { loadDictionary, mentionsIn } from './ingest.ts';
+import { toolByName, search, type Card, type Ctx, type ToolResult } from './tools.ts';
+import { ago } from './util.ts';
+
+/**
+ * The built-in graph planner. When no LLM is configured (or it fails), ZivBot
+ * still works: it maps the request to graph tools with simple intent rules,
+ * runs them, and composes the reply from what the graph returned. The answer
+ * is just as traceable — the same tools, the same Cypher.
+ */
+
+type Ent = { uid: string; label: string };
+const labelOf = (u: string) => ({ person: 'Person', system: 'System', project: 'Project', org: 'Org', ticket: 'Ticket', team: 'Team', repo: 'Repo' } as Record<string, string>)[u.split(':')[0]] || 'Node';
+
+async function entities(g: UserGraph, text: string): Promise<Ent[]> {
+  const dict = await loadDictionary(g);
+  const uids = mentionsIn(dict, text);
+  // keep the order they appear in the text
+  const pos = (u: string) => {
+    const d = dict.find((x) => x.uid === u && x.re.test(text));
+    return d ? text.toLowerCase().indexOf(d.term.toLowerCase()) : 999;
+  };
+  return uids.sort((a, b) => pos(a) - pos(b)).filter((u) => u !== 'person:me').map((u) => ({ uid: u, label: labelOf(u) }));
+}
+
+export type PlanResult = { text: string; cards: Card[]; tools: string[] };
+
+export type PlanOpts = {
+  dot?: { uid: string; name: string; role: string };
+  from?: string;
+  delegate?: (to: string, goal: string) => Promise<{ text: string; cards: Card[]; to?: { name: string } }>;
+};
+
+export async function plan(ctx: Ctx, input: string, opts: PlanOpts = {}): Promise<PlanResult> {
+  const t = input.trim();
+  const low = t.toLowerCase();
+  const used: string[] = [];
+  const cards: Card[] = [];
+  const call = async (name: string, args: Record<string, unknown> = {}): Promise<ToolResult> => {
+    used.push(name);
+    const r = await toolByName(name)!.run(ctx, args);
+    cards.push(...(r.cards || []));
+    return r;
+  };
+  const done = (text: string): PlanResult => ({ text, cards, tools: used });
+  const ents = await entities(ctx.g, t);
+  const first = (...labels: string[]) => ents.find((e) => labels.includes(e.label));
+  const dots = await ctx.g.q(`MATCH (d:Dot) WHERE d.uid <> $me RETURN d.name AS name, d.role AS role`, { me: ctx.dot }, '~other dots');
+  const specialist = (re: RegExp) => (opts.from || !opts.delegate || (opts.dot && re.test(opts.dot.role)) ? null : dots.find((d) => re.test(d.role)));
+  const delegateTo = async (name: string, goal: string, intro?: string) => {
+    used.push('message_dot');
+    const r = await opts.delegate!(name, goal);
+    cards.push(...r.cards.filter((c) => c.type !== 'options'));
+    return done(`${intro ?? `I asked **${name}** to take this.`} ${name} got back to me:\n\n${r.text}`);
+  };
+
+  // ---- talk to another dot: "ask Forge to …", "tell Scout …"
+  const direct = t.match(/^(?:please\s+)?(?:ask|tell|have|get|message|ping|loop in)\s+(\w+)\s*(?:to|that|:|,)?\s*(.*)$/i);
+  if (direct && opts.delegate && !opts.from) {
+    const target = dots.find((d) => d.name.toLowerCase() === direct[1].toLowerCase());
+    if (target) return delegateTo(target.name, direct[2] || t, `Sure — I messaged **${target.name}**.`);
+  }
+
+  if (/^(what can you do|help|what do you do)\??$/i.test(t)) {
+    return done(`Here's what I can do with your graph:\n- **Triage** — "what needs me?" ranks mail, incidents, decisions and calendar clashes by who and what they touch\n- **Act** — "fix LUM-142" picks the best coding agent from your subscriptions and runs it once you approve\n- **Trace** — "why did we move to Stripe?", "who knows billing-db?", "what breaks if auth-service goes down?"\n- **Coordinate** — "ask Forge to …" sends work to another dot; they share my memory\n- **Remember** — "remember that Kate prefers calls" — every dot uses it\n\nTap the path icon under any answer to see the Cypher and the nodes behind it.`);
+  }
+
+  // ---- memory writes
+  if (/^(remember|note( that)?|from now on|always|never|i prefer|prefer|keep in mind)\b/i.test(t)) {
+    const r = await call('remember', { text: t.replace(/^(remember( that)?|note( that)?|keep in mind( that)?)[:,]?\s*/i, '') });
+    return done(`Got it. ${r.text}`);
+  }
+
+  // ---- decisions waiting on me: "confirm Oct 28", "go with the shim"
+  const pending = await ctx.g.q(`MATCH (d:Decision {status:'pending'}) RETURN d.uid AS uid, d.text AS text, d.options AS options`, {}, '~pending decisions');
+  for (const d of pending) {
+    for (const o of (d.options as string[]) || []) {
+      const words = o.toLowerCase().split(/\W+/).filter((w) => w.length > 2 && !['the', 'and', 'support'].includes(w));
+      const hit = words.filter((w) => low.includes(w)).length;
+      if ((/^(confirm|go with|let'?s|choose|pick|decide|ok|yes)/i.test(t) || low.includes('decide')) && hit >= Math.min(2, words.length)) {
+        const r = await call('decide', { decision: d.uid, choice: o });
+        return done(r.text);
+      }
+    }
+  }
+  if (/\b(decide|decision)\b/.test(low) && !/\bwhy\b|\bwho\b|trace/.test(low)) {
+    const target = pending.find((d) => d.text.toLowerCase().split(/\W+/).some((w: string) => w.length > 4 && low.includes(w))) || pending[0];
+    if (target) {
+      cards.push({ type: 'options', question: target.text, options: (target.options as string[]).map((o, i) => ({ key: String.fromCharCode(65 + i), label: o, value: `Decide: ${o}` })) });
+      const tr = await call('decision_trace', { topic: target.uid });
+      return done(`Here's what I know about **${target.text}**:\n${tr.text}\n\nWhich way do you want to go? I'll record it and draft the follow-ups.`);
+    }
+  }
+
+  // ---- act: fix tickets with the coding-agent fleet
+  if (/\b(fix|patch|repair|resolve|ship a fix|hand .* to|dispatch)\b/.test(low)) {
+    const keys = [...t.matchAll(/\b([A-Z]{2,6}-\d+)\b/gi)].map((m) => m[1].toUpperCase());
+    const targets = keys.length ? keys : ents.filter((e) => ['Ticket', 'Org', 'System'].includes(e.label)).map((e) => e.uid);
+    if (targets.length) {
+      const eng = specialist(/engineer/i);
+      if (eng) return delegateTo(eng.name, t, `This is engineering work, so I passed it to **${eng.name}**.`);
+      const r = await call('propose_fix', { tickets: targets });
+      return done(r.text);
+    }
+  }
+
+  if (/\b(brief|report|write[- ]?up|summary doc|memo)\b/.test(low) && ents.length) {
+    const res = specialist(/research/i);
+    if (res) return delegateTo(res.name, t, `**${res.name}** writes our briefs, so I asked them.`);
+    return done(await writeBrief(ctx, call, ents[0]));
+  }
+
+  if (/\bwho\b.*\b(knows?|worked|works|owns?|expert|familiar|touched|wrote)\b/.test(low)) {
+    const x = first('System', 'Project', 'Repo', 'Org', 'Ticket') || (await search(ctx.g, t.replace(/who|knows?|about|worked on|owns?/gi, ''), ['System', 'Project', 'Repo', 'File'], 1)).map((r) => ({ uid: r.uid, label: r.label }))[0];
+    if (x) return done((await call('who_knows', { ref: x.uid })).text);
+  }
+
+  if (/(what breaks|goes down|go down|blast radius|impact of|if .* (fails|dies|is down)|outage)/.test(low)) {
+    const x = first('System', 'Repo');
+    if (x) return done((await call('blast_radius', { ref: x.uid })).text);
+  }
+
+  if (/\b(why did we|why are we|who decided|decid|decision)/.test(low)) {
+    const x = first('Project', 'System', 'Org', 'Ticket');
+    return done((await call('decision_trace', { topic: x?.uid || t })).text);
+  }
+
+  if (/(connected|connection|relate[sd]?|link(ed)?|path) (between|to)|how (is|are|does) .* (connected|related|linked)/.test(low) && ents.length >= 2) {
+    return done((await call('connection_path', { from: ents[0].uid, to: ents[1].uid })).text);
+  }
+
+  if (/(what did|asked|ask(ed)? for|was it resolved|history with|last month|status with|where are we with)/.test(low)) {
+    const x = first('Org', 'Person');
+    if (x) return done((await call('customer_history', { org: x.uid })).text);
+  }
+
+  if (/(important|key|central|influential) (people|person|contacts)|who matters|brokers?\b|working groups/.test(low)) {
+    return done((await call('key_people')).text);
+  }
+
+  if (/\b(schedule|book|set up|arrange) (a |an )?(meeting|call|sync|1:1|chat)\b/.test(low)) {
+    const people = ents.filter((e) => e.label === 'Person');
+    const topic = first('Project', 'Org', 'System');
+    const r = await call('propose_event', { title: `${topic ? (await ctx.g.one(`MATCH (n {uid:$u}) RETURN n.name AS n`, { u: topic.uid }))?.n + ' ' : ''}sync`.trim(), attendees: people.map((p) => p.uid) });
+    return done(r.text);
+  }
+
+  if (/\b(calendar|agenda|meetings?|my day|my week|tomorrow|today)\b/.test(low) && !/\b(reply|email|draft)\b/.test(low)) {
+    return done(`Here's what's coming up:\n${(await call('agenda', { days: 4 })).text}`);
+  }
+
+  if (/(unsubscribe|newsletters?|clean ?up (my )?inbox|declutter|promo)/.test(low)) {
+    return done((await call('inbox_cleanup')).text + '\n\nWant me to unsubscribe from them? I\'ll ask before each one.');
+  }
+
+  if (/\b(reply|respond|draft|write (to|an? email)|email|follow up with)\b/.test(low)) {
+    const p = first('Person') || (first('Org') ? { uid: (await ctx.g.one(`MATCH (p:Person)-[:WORKS_AT]->(:Org {uid:$o}) RETURN p.uid AS uid LIMIT 1`, { o: first('Org')!.uid }))?.uid, label: 'Person' } : null);
+    if (p?.uid) return done((await composeReply(ctx, call, p.uid)).text);
+  }
+
+  if (/\b(agents?|subscriptions?|codex|claude|cursor|opencode|grok|antigravity|fleet)\b/.test(low)) {
+    return done(`Here's your agent fleet — the subscriptions on my computer I can hand work to:\n${(await call('list_agents')).text}`);
+  }
+
+  if (/(plate|triage|priorit|what should i|urgent|attention|first task|suggest|catch me up|what'?s up|morning|brief|help with|anything (for|to)|what needs)/.test(low)) {
+    return done(await triageReply(ctx, call, cards));
+  }
+
+  if (/(what do you (know|remember)|recall|do you remember)/.test(low)) {
+    const r = await call('recall', { query: t.replace(/what do you (know|remember) about|recall|do you remember/gi, '') });
+    return done(r.text);
+  }
+
+  // "tell me about X", "who is X", or a bare entity name
+  const x = ents[0];
+  if (x) return done((await call('describe_entity', { ref: x.uid })).text);
+  const hits = await search(ctx.g, t, undefined, 6);
+  used.push('search_graph');
+  if (hits.length) {
+    if (hits[0].score > 1.5 * (hits[1]?.score || 0)) return done((await call('describe_entity', { ref: hits[0].uid })).text);
+    return done(`Here's what I found in your graph:\n${hits.map((h: Row) => `- ${h.label} **${h.name}**`).join('\n')}\n\nAsk me about any of them.`);
+  }
+  return done(`I couldn't find anything about that in your graph yet. Try asking what needs your attention, who knows a system, what breaks if something goes down, or to fix a ticket.`);
+}
+
+export async function triageReply(ctx: Ctx, call: (n: string, a?: any) => Promise<ToolResult>, cards: Card[]) {
+  const r = await call('triage');
+  const d = r.data as any;
+  const opts: { key: string; label: string; value: string }[] = [];
+  // Only offer fixes the fleet can actually do: tickets on a system whose repo is on this computer.
+  const fixable = await ctx.g.q(
+    `MATCH (t:Ticket {status:'open'})-[:AFFECTS]->(:System)<-[:IMPLEMENTS]-(r:Repo) WHERE r.path IS NOT NULL
+     OPTIONAL MATCH (t)-[:FOR]->(o:Org)
+     RETURN DISTINCT t.key AS key, t.priority AS p, coalesce(o.arr, 0) AS arr ORDER BY p, arr DESC LIMIT 2`,
+    {},
+    'tickets my coding agents can fix (repo on this computer)',
+  );
+  const tick = fixable.map((i: any) => i.key);
+  if (tick.length) opts.push({ key: '', label: `Fix ${tick.join(' + ')} with my coding agents`, value: `Fix ${tick.join(' and ')}` });
+  const top = d.threads[0];
+  if (top) opts.push({ key: '', label: `Draft a reply to ${top.sender.split(' ')[0]}`, value: `Draft a reply to ${top.sender}` });
+  const dec = d.decisions[0];
+  if (dec) opts.push({ key: '', label: `Decide: ${dec.text}`, value: `Help me decide: ${dec.text}` });
+  opts.forEach((o, i) => (o.key = String.fromCharCode(65 + i)));
+  if (opts.length) cards.push({ type: 'options', question: 'Want me to take one of these?', options: opts });
+  return `A few things I could take off your plate — ranked by what the graph says matters most:\n\n${r.text}`;
+}
+
+async function writeBrief(ctx: Ctx, call: (n: string, a?: any) => Promise<ToolResult>, e: Ent) {
+  const name = (await ctx.g.one(`MATCH (n {uid:$u}) RETURN n.name AS n`, { u: e.uid }))?.n || e.uid;
+  const sections: string[] = [`# Brief: ${name}`, `_Written by ZivBot from your graph on ${new Date().toDateString()}. Every line below comes from a Cypher query you can replay._`];
+  sections.push('## What it is', (await call('describe_entity', { ref: e.uid })).text);
+  let sys = e.label === 'System' ? e.uid : null;
+  if (e.label === 'Ticket') sys = (await ctx.g.one(`MATCH (:Ticket {uid:$u})-[:AFFECTS]->(s:System) RETURN s.uid AS s LIMIT 1`, { u: e.uid }))?.s;
+  if (sys) sections.push('## Blast radius', (await call('blast_radius', { ref: sys })).text);
+  if (['System', 'Project', 'Repo', 'Ticket', 'Org'].includes(e.label)) sections.push('## Who knows it', (await call('who_knows', { ref: sys || e.uid })).text);
+  if (e.label === 'Org') sections.push('## Customer history', (await call('customer_history', { org: e.uid })).text);
+  sections.push('## Decisions on record', (await call('decision_trace', { topic: e.uid })).text);
+  const file = `${name.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40)}-brief.md`;
+  const r = await call('write_file', { name: file, content: sections.join('\n\n') });
+  return `I wrote up everything the graph knows about **${name}** — what it touches, who knows it, and the decisions behind it. ${r.text}`;
+}
+
+async function composeReply(ctx: Ctx, call: (n: string, a?: any) => Promise<ToolResult>, person: string): Promise<ToolResult> {
+  const g = ctx.g;
+  const p = await g.one(`MATCH (p:Person {uid:$u}) OPTIONAL MATCH (p)-[:WORKS_AT]->(o:Org) RETURN p.name AS name, o.uid AS org, o.kind AS kind`, { u: person }, 'who am I replying to');
+  const meName = (await g.one(`MATCH (m:Person {me:true}) RETURN m.name AS n`))?.n || '';
+  const first = String(p?.name || '').split(' ')[0];
+  let body = `Hi ${first},\n\nThanks for the note — I'm on it and will get back to you shortly.\n\nBest,\n${meName}`;
+  if (p?.kind === 'customer') {
+    const tix = await g.q(
+      `MATCH (t:Ticket)-[:FOR]->(:Org {uid:$o}) WHERE t.status <> 'resolved'
+       OPTIONAL MATCH (t)-[:ASSIGNED_TO]->(a:Person) OPTIONAL MATCH (r:Run {status:'succeeded'})-[:RESOLVES]->(t)
+       OPTIONAL MATCH (e:Event)-[:ABOUT]->(:Org {uid:$o}) WHERE e.start > $now
+       RETURN t.key AS key, t.title AS title, t.status AS status, a.name AS assignee, count(r) AS fixed, min(e.start) AS next`,
+      { o: p.org, now: Date.now() },
+      'their open tickets and fixes',
+    );
+    const fixed = tix.filter((t) => t.fixed > 0 || t.status === 'fix ready');
+    const open = tix.filter((t) => !(t.fixed > 0 || t.status === 'fix ready'));
+    const lines = [
+      ...fixed.map((t) => `- ${t.title.replace(/^.*?:\s*/, '')}: fixed — the change is in review and ships with tomorrow's deploy.`),
+      ...open.map((t) => `- ${t.title.replace(/^.*?:\s*/, '')}: ${t.assignee?.split(' ')[0] || 'our team'} is on it today.`),
+    ];
+    const next = tix.find((t) => t.next)?.next;
+    body = `Hi ${first},\n\nSorry this has dragged on — here's where things stand:\n${lines.join('\n')}\n\nYou'll have the corrected invoice before Friday${next ? `, and we can walk through it at our QBR ${ago(next).replace('in ', 'in ')}` : ''}.\n\nBest,\n${meName}`;
+  }
+  return call('draft_email', { to: person, body });
+}

@@ -1,0 +1,7 @@
+{
+  "name": "lumen-payments",
+  "private": true,
+  "type": "module",
+  "description": "payments-api for Lumen Labs (synthetic demo repo for ZivBot)",
+  "scripts": { "test": "node --test" }
+}
