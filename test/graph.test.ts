@@ -165,3 +165,15 @@ test('graph-driven action: reassign a ticket to whoever knows the system with ro
   const prev = await g.one(`MATCH (:Ticket {uid:'ticket:LUM-139'})-[:PREVIOUSLY_ASSIGNED_TO]->(p:Person) RETURN p.uid AS uid`);
   assert.equal(prev.uid, 'person:raj');
 });
+
+test('meeting prep follows event → attendees → org → tickets, mail and unanswered threads', async () => {
+  const { plan } = await import('../server/planner.ts');
+  const r = await plan({ g, userId: USER, dot }, 'Prep me for the Brightwave QBR');
+  assert.ok(r.tools.includes('meeting_prep'), r.tools.join(','));
+  assert.match(r.text, /Brightwave QBR/);
+  assert.match(r.text, /LUM-139/);
+  assert.match(r.text, /Close the loop on "Duplicate line items on our September invoice"/);
+  assert.ok(r.cards.some((c) => c.type === 'file'));
+  const linked = await g.one(`MATCH (d:Doc)-[:PREPARES]->(:Event {uid:'event:bw-qbr'}) RETURN count(d) AS n`);
+  assert.equal(linked.n, 1);
+});

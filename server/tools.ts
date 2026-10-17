@@ -426,6 +426,81 @@ export const tools: Tool[] = [
   },
 
   {
+    name: 'meeting_prep',
+    description: 'Prepare me for a meeting: follow the event to its attendees, their organisations, open and fixed tickets, recent mail and what is still unanswered, related decisions, and write a brief with a suggested agenda.',
+    params: { type: 'object', properties: { meeting: { type: 'string', description: 'event name/uid, or a person or org I am meeting next' } }, required: ['meeting'] },
+    async run({ g, userId, dot }, { meeting }) {
+      let ev = await resolve(g, meeting, ['Event']);
+      if (!ev) {
+        // "prep me for Kate" / "for Brightwave": the next event with them
+        const x = await resolve(g, meeting, ['Person', 'Org']);
+        if (x) ev = await g.one(
+          `MATCH (e:Event) WHERE e.end > $now AND ((e)<-[:ATTENDS]-(:Person {uid:$u}) OR (e)-[:ABOUT]->({uid:$u}) OR (e)<-[:ATTENDS]-(:Person)-[:WORKS_AT]->(:Org {uid:$u}))
+           RETURN e.uid AS uid, e.name AS name ORDER BY e.start LIMIT 1`,
+          { u: x.uid, now: Date.now() },
+          `next meeting with ${x.name}`,
+        );
+      }
+      if (!ev) return { text: `I couldn't find a meeting for "${meeting}".` };
+      const head = await g.one(
+        `MATCH (e:Event {uid:$u})
+         OPTIONAL MATCH (p:Person)-[:ATTENDS]->(e) WHERE NOT coalesce(p.me, false)
+         OPTIONAL MATCH (p)-[:WORKS_AT]->(o:Org)
+         RETURN e.title AS title, e.start AS start, e.end AS end, collect(DISTINCT {uid: p.uid, name: p.name, role: p.role, org: o.name}) AS people,
+                collect(DISTINCT o.uid) AS orgs`,
+        { u: ev.uid },
+        'the meeting and who is in it',
+      );
+      const ext = await g.q(
+        `UNWIND $orgs AS ou MATCH (o:Org {uid: ou}) WHERE o.kind IN ['customer', 'investor', 'prospect', 'vendor']
+         OPTIONAL MATCH (t:Ticket)-[:FOR]->(o)
+         OPTIONAL MATCH (r:Run {status:'succeeded'})-[:RESOLVES]->(t)
+         WITH o, collect(DISTINCT {key: t.key, title: t.title, status: t.status, fixed: r IS NOT NULL}) AS tickets
+         OPTIONAL MATCH (o)<-[:WORKS_AT]-(:Person)<-[:FROM]-(m:Email) WHERE m.at > $since
+         WITH o, tickets, m ORDER BY m.at DESC
+         WITH o, tickets, collect({subject: m.subject, at: m.at, body: m.body})[0..4] AS mail
+         OPTIONAL MATCH (th:Thread {awaitingReply: true})<-[:IN_THREAD]-(:Email)-[:FROM]->(:Person)-[:WORKS_AT]->(o)
+         RETURN o.uid AS uid, o.name AS name, o.kind AS kind, o.arr AS arr, tickets, mail, collect(DISTINCT th.subject) AS waiting`,
+        { orgs: head.orgs, since: Date.now() - 45 * DAY },
+        'their tickets, fixes, recent mail and unanswered threads',
+      );
+      const topics = await g.q(
+        `MATCH (e:Event {uid:$u})
+         OPTIONAL MATCH (e)-[:ABOUT]->(x)
+         OPTIONAL MATCH (d:Decision)-[:ABOUT]->(x)
+         OPTIONAL MATCH (t:Ticket {status:'open'})-[:PART_OF|FOR]->(x)
+         RETURN collect(DISTINCT x.name) AS about, collect(DISTINCT {text: d.text, status: d.status, choice: d.choice}) AS decisions, collect(DISTINCT t.key) AS tickets`,
+        { u: ev.uid },
+        'what the meeting is about: decisions and open work',
+      );
+      const tp = topics[0] || { about: [], decisions: [], tickets: [] };
+      const agenda: string[] = [];
+      const lines: string[] = [`# ${head.title}`, `_${when(head.start)} · prepared by ZivBot from your graph_`, '', '## Who', ...head.people.filter((p: any) => p.uid).map((p: any) => `- **${p.name}** — ${p.role || ''}${p.org && p.org !== 'Lumen Labs' ? `, ${p.org}` : ''}`)];
+      for (const o of ext) {
+        const tickets = (o.tickets as any[]).filter((t) => t.key);
+        lines.push('', `## ${o.name}${o.arr ? ` · $${Math.round(o.arr / 1000)}k ARR` : ''}`);
+        if (tickets.length) lines.push('**Tickets**', ...tickets.map((t) => `- ${t.key} ${t.title} — ${t.fixed || t.status === 'fix ready' ? 'fixed, shipping next deploy' : t.status}`));
+        if ((o.mail as any[]).length) lines.push('**What they wrote recently**', ...(o.mail as any[]).filter((m) => m.subject).map((m) => `- ${ago(m.at)}: "${m.subject}" — ${clip(m.body, 120)}`));
+        if ((o.waiting as string[]).length) lines.push(`**Still unanswered:** ${(o.waiting as string[]).join('; ')}`);
+        for (const t of tickets) agenda.push(t.fixed || t.status === 'fix ready' ? `Confirm ${t.key} is fixed and when it ships` : t.status === 'open' ? `Status and owner for ${t.key}` : '');
+        if ((o.waiting as string[]).length) agenda.unshift(`Close the loop on "${(o.waiting as string[])[0]}"`);
+      }
+      const ds = (tp.decisions as any[]).filter((d) => d.text);
+      if (ds.length) lines.push('', '## Decisions on this', ...ds.map((d) => `- ${d.text} — ${d.status === 'pending' ? 'pending' : `decided${d.choice ? `: ${d.choice}` : ''}`}`));
+      for (const d of ds.filter((d) => d.status === 'pending')) agenda.push(`Decide: ${d.text}`);
+      const ag = [...new Set(agenda.filter(Boolean))].slice(0, 6);
+      lines.push('', '## Suggested agenda', ...(ag.length ? ag.map((a, i) => `${i + 1}. ${a}`) : ['1. Open floor']));
+      const file = await writeOutput(g, userId, dot, `${String(head.title).toLowerCase().replace(/[^a-z0-9]+/g, '-')}-prep.md`, lines.join('\n'));
+      await g.q(`MATCH (d:Doc {uid:$d}), (e:Event {uid:$e}) MERGE (d)-[:PREPARES]->(e)`, { d: file.uid, e: ev.uid }, '~link brief to meeting');
+      return {
+        text: `**${head.title}** — ${when(head.start)} with ${head.people.filter((p: any) => p.uid).map((p: any) => p.name.split(' ')[0]).join(', ')}.\n\n${ext.map((o) => `**${o.name}**: ${(o.tickets as any[]).filter((t) => t.key).map((t) => `${t.key} ${t.fixed || t.status === 'fix ready' ? 'fixed' : t.status}`).join(', ') || 'no tickets'}${(o.waiting as string[]).length ? `; ${o.waiting.length} thread${o.waiting.length > 1 ? 's' : ''} still unanswered` : ''}.`).join('\n')}\n\nSuggested agenda:\n${(ag.length ? ag : ['Open floor']).map((a, i) => `${i + 1}. ${a}`).join('\n')}`,
+        cards: [{ type: 'file', uid: file.uid, name: file.name, size: file.size }, { type: 'graph', title: head.title, focus: [ev.uid, ...head.people.map((p: any) => p.uid).filter(Boolean), ...ext.map((o) => o.uid)] }],
+        data: { head, ext, topics: tp, agenda: ag },
+      };
+    },
+  },
+
+  {
     name: 'agenda',
     description: 'My upcoming meetings for the next N days, with conflicts and what each meeting is about.',
     params: { type: 'object', properties: { days: { type: 'number' } } },

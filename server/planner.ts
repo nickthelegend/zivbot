@@ -215,6 +215,11 @@ export async function plan(ctx: Ctx, input: string, opts: PlanOpts = {}): Promis
     return done((await call('key_people')).text);
   }
 
+  if (/\b(prep|prepare|brief) (me )?(for|on)\b|\bmeeting prep\b|\bget me ready for\b/.test(low)) {
+    const target = t.replace(/^.*?\b(prep|prepare|brief|ready)\b( me)?( for| on)?( the| my)?\s*/i, '').replace(/[?.!]+$/, '').trim();
+    return done((await call('meeting_prep', { meeting: target || 'next meeting' })).text);
+  }
+
   if (/\b(schedule|book|set up|arrange) (a |an )?(meeting|call|sync|1:1|chat)\b/.test(low)) {
     const people = ents.filter((e) => e.label === 'Person');
     const topic = first('Project', 'Org', 'System');
