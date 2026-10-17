@@ -17,7 +17,6 @@ export function Sidebar() {
   const theme = useStore((s) => s.theme);
   const graph = useStore((s) => s.graph);
   const [q, setQ] = useState('');
-  const [searching, setSearching] = useState(false);
   const [menu, setMenu] = useState<'new' | 'me' | null>(null);
   const connected = connectors.filter((c) => c.status === 'connected' && !c.id.startsWith('agent-'));
   const list = conversations
@@ -33,7 +32,7 @@ export function Sidebar() {
           {graph && <button className="graph-pulse" title={`Your FalkorDB graph · ${graph.nodes} nodes · ${graph.edges} edges`} onClick={() => set({ view: 'graph', mobileList: false })}><i />{graph.nodes >= 1000 ? `${(graph.nodes / 1000).toFixed(1)}k` : graph.nodes}</button>}
         </div>
         <div className="side-actions">
-          <button className="icon-btn round" onClick={() => setSearching(!searching)} title="Search"><Icon.search size={17} /></button>
+          <button className="icon-btn round" onClick={() => set({ paletteOpen: true })} title="Search (⌘K)"><Icon.search size={17} /></button>
           <div className="menu-anchor">
             <button className="icon-btn round" onClick={() => setMenu(menu === 'new' ? null : 'new')} title="New"><Icon.plus size={17} /></button>
             {menu === 'new' && (
@@ -48,7 +47,6 @@ export function Sidebar() {
           </div>
         </div>
       </div>
-      {searching && <input className="side-search" autoFocus placeholder="Search" value={q} onChange={(e) => setQ(e.target.value)} />}
       <div className="conv-list">
         {(['direct', 'group'] as const).map((kind) => {
           const rows = list.filter((c) => c.kind === kind);

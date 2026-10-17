@@ -91,6 +91,7 @@ export const api = {
   updateDot: (id: string, b: { name?: string; role?: string; avatar?: string; color?: string }) => req(`/api/dots/${id}`, b, 'PATCH'),
   createGroup: (dots: string[], name?: string) => req<{ conv: string }>('/api/groups', { dots, name }),
   scan: () => req('/api/scan', {}),
+  search: (q: string) => req<{ uid: string; name: string; label: string; score: number }[]>(`/api/search?q=${encodeURIComponent(q)}`),
   insights: () => req<{ key: string; title: string; blurb: string; items: { title: string; detail: string; uids: string[]; severity: 'high' | 'medium' | 'low'; ask?: string }[] }[]>('/api/insights'),
 };
 

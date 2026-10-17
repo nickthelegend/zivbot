@@ -14,7 +14,7 @@ import { listDots, listConversations, history, createDot, createGroup, updateDot
 import { catalogFor, connect, disconnect } from './connectors/index.ts';
 import { approveDraft, rejectDraft } from './actions.ts';
 import { routeJob, syncFleet } from './fleet.ts';
-import { toolByName } from './tools.ts';
+import { toolByName, search as graphSearch } from './tools.ts';
 import { startProactive, scanUser } from './proactive.ts';
 import { LABEL_META } from './schema.ts';
 import { insights } from './insights.ts';
@@ -233,6 +233,14 @@ app.get('/api/answers/:id', async (c) => {
   const sub = await g.q(`MATCH (:Answer {uid:$u})-[:DELEGATED_TO*1..2]->(b:Answer)-[:BY]->(d:Dot) RETURN b.queries AS queries, d.name AS dot`, { u: c.req.param('id') });
   const queries = [...JSON.parse(a.a.queries || '[]'), ...sub.flatMap((s) => JSON.parse(s.queries || '[]').map((q: any) => ({ ...q, dot: s.dot })))];
   return c.json({ ...a.a, dot: a.dot, delegatedTo: sub.map((s) => s.dot), queries, nodes: used, edges: await edgesAmong(g, used.map((n) => n.id)) });
+});
+
+app.get('/api/search', async (c) => {
+  const g = await userGraph(user(c));
+  const q = (c.req.query('q') || '').trim();
+  if (q.length < 2) return c.json([]);
+  const rows = await graphSearch(g, q, ['Person', 'Org', 'Project', 'System', 'Ticket', 'Decision', 'Doc', 'Thread', 'Repo', 'Event', 'Agent'], 8);
+  return c.json(rows);
 });
 
 app.get('/api/entity/:uid', async (c) => {

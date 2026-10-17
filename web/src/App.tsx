@@ -12,6 +12,7 @@ import { Mascot } from './components/Mascot';
 import { Avatar } from './components/Avatar';
 import { Icon } from './components/icons';
 import { PairModal } from './components/PairModal';
+import { Palette } from './components/Palette';
 
 export function App() {
   const ready = useStore((s) => s.ready);
@@ -55,6 +56,7 @@ export function App() {
       <ConnectModal />
       <NewDotModal />
       <PairModal />
+      <Palette />
     </div>
   );
 }

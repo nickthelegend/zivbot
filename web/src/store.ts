@@ -39,6 +39,7 @@ export type State = {
   graph?: { nodes: number; edges: number; graph: string };
   call: boolean;
   customizeOpen: boolean;
+  paletteOpen: boolean;
 };
 
 let state: State = {
@@ -49,6 +50,7 @@ let state: State = {
   theme: (() => { try { return (localStorage.getItem('zivbot.theme') as 'dark' | 'light') || 'dark'; } catch { return 'dark'; } })(),
   call: false,
   customizeOpen: false,
+  paletteOpen: false,
 };
 const subs = new Set<() => void>();
 export const get = () => state;
