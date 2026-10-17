@@ -60,8 +60,8 @@ small { color: var(--muted); }
 ::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: 10px; border: 3px solid transparent; background-clip: content-box; }
 
 /* ---------------------------------------------------------------- layout */
-.app { display: grid; grid-template-columns: 280px 1fr; height: 100vh; overflow: hidden; }
-.app.with-right { grid-template-columns: 280px 1fr 340px; }
+.app { display: grid; grid-template-columns: 280px minmax(0, 1fr); height: 100vh; overflow: hidden; }
+.app.with-right { grid-template-columns: 280px minmax(0, 1fr) 340px; }
 .main { position: relative; min-width: 0; display: flex; flex-direction: column; height: 100vh; }
 .top-tools { position: absolute; top: 14px; right: 16px; display: flex; gap: 6px; z-index: 5; }
 .splash { height: 100vh; display: grid; place-content: center; justify-items: center; gap: 16px; color: var(--muted); }
@@ -95,7 +95,7 @@ small { color: var(--muted); }
 .conv { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; padding: 9px 10px; border-radius: 12px; position: relative; }
 .conv:hover { background: var(--hover); }
 .conv.on { background: var(--hover); }
-.conv-text { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.conv-text { display: flex; flex-direction: column; min-width: 0; flex: 1; overflow: hidden; }
 .conv-name { font-weight: 500; font-size: 14.5px; }
 .conv-prev { color: var(--muted); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .unread { width: 8px; height: 8px; border-radius: 50%; background: #3b82f6; flex: none; }
@@ -431,9 +431,20 @@ textarea.draft-body { resize: vertical; outline: none; }
   .activity-view { grid-template-columns: 1fr 1fr; }
   .graph-main { grid-template-columns: 1fr; grid-template-rows: 1fr auto; }
 }
+.mobile-back, .mobile-home { display: none !important; pointer-events: auto; }
+.mobile-home { position: absolute; top: 10px; left: 12px; z-index: 6; }
+.flip { transform: rotate(180deg); }
 @media (max-width: 760px) {
-  .app, .app.with-right { grid-template-columns: 1fr; }
-  .sidebar { display: none; }
+  .app, .app.with-right { grid-template-columns: minmax(0, 1fr); }
+  .sidebar { display: none; min-width: 0; width: 100%; }
+  .app.m-list .sidebar { display: flex; height: 100vh; }
+  .app.m-list .main, .app.m-list .profile { display: none; }
+  .mobile-back { display: inline-grid !important; position: absolute; left: 12px; }
+  .mobile-home { display: inline-grid !important; }
+  .chat-top { top: 10px; }
+  .top-tools { top: 10px; right: 10px; }
+  .app.with-right .profile { width: 100%; }
+  .graph-view { padding-top: 56px; }
   .messages { padding: 60px 14px 14px; }
   .composer-wrap { padding: 6px 10px 14px; }
   .app-grid { grid-template-columns: 1fr; }
@@ -441,3 +452,12 @@ textarea.draft-body { resize: vertical; outline: none; }
   .mascot { display: none; }
   .graph-toolbar { padding-right: 0; padding-top: 40px; }
 }
+
+/* ---------------------------------------------------------------- desktop + pairing */
+.app.desktop.darwin .side-top { padding-top: 44px; }
+.app.desktop .side-top, .app.desktop .chat-top { -webkit-app-region: drag; }
+.app.desktop .side-top button, .app.desktop .conv-pill { -webkit-app-region: no-drag; }
+.pair-modal { width: min(460px, 100%); }
+.pair-body { display: flex; flex-direction: column; align-items: center; gap: 14px; text-align: center; padding-bottom: 26px; }
+.pair-qr { background: #fff; border-radius: 18px; padding: 14px; }
+.pair-url { font-family: 'JetBrains Mono', monospace; font-size: 12px; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; word-break: break-all; user-select: all; }

@@ -1,0 +1,32 @@
+{
+  "expo": {
+    "name": "ZivBot",
+    "slug": "zivbot",
+    "version": "0.1.0",
+    "scheme": "zivbot",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#141414",
+    "icon": "./assets/icon.png",
+    "splash": { "image": "./assets/splash.png", "resizeMode": "contain", "backgroundColor": "#141414" },
+    "ios": {
+      "bundleIdentifier": "dev.zivbot.app",
+      "supportsTablet": false,
+      "infoPlist": {
+        "NSAppTransportSecurity": { "NSAllowsArbitraryLoads": true, "NSAllowsLocalNetworking": true },
+        "NSLocalNetworkUsageDescription": "ZivBot talks to the dots on your own computer over your Wi-Fi.",
+        "NSCameraUsageDescription": "Scan the pairing code shown by ZivBot on your computer."
+      }
+    },
+    "android": {
+      "package": "dev.zivbot.app",
+      "adaptiveIcon": { "foregroundImage": "./assets/adaptive-icon.png", "backgroundColor": "#141414" },
+      "permissions": ["android.permission.CAMERA", "android.permission.POST_NOTIFICATIONS", "android.permission.INTERNET", "android.permission.RECORD_AUDIO"],
+      "usesCleartextTraffic": true
+    },
+    "plugins": [
+      ["expo-camera", { "cameraPermission": "Scan the pairing code shown by ZivBot on your computer." }],
+      "expo-notifications"
+    ]
+  }
+}

@@ -30,8 +30,8 @@ export function Sidebar() {
       {searching && <input className="side-search" autoFocus placeholder="Search chats" value={q} onChange={(e) => setQ(e.target.value)} />}
       <nav className="side-nav">
         <button className={view === 'chat' ? 'on' : ''} onClick={() => set({ view: 'chat' })}><Icon.chat size={16} /> Chats</button>
-        <button className={view === 'graph' ? 'on' : ''} onClick={() => set({ view: 'graph' })}><Icon.graph size={16} /> Graph</button>
-        <button className={view === 'activity' ? 'on' : ''} onClick={() => set({ view: 'activity' })}><Icon.bolt size={16} /> Activity {pending > 0 && <span className="count">{pending}</span>}</button>
+        <button className={view === 'graph' ? 'on' : ''} onClick={() => set({ view: 'graph', mobileList: false })}><Icon.graph size={16} /> Graph</button>
+        <button className={view === 'activity' ? 'on' : ''} onClick={() => set({ view: 'activity', mobileList: false })}><Icon.bolt size={16} /> Activity {pending > 0 && <span className="count">{pending}</span>}</button>
       </nav>
       <div className="conv-list">
         {list.map((c) => {

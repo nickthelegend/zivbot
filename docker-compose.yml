@@ -1,0 +1,21 @@
+# docker compose up -d   →   http://localhost:8787  (FalkorDB Browser on http://localhost:3000)
+services:
+  falkordb:
+    image: falkordb/falkordb:latest
+    ports: ["6379:6379", "3000:3000"]
+    volumes: [falkordb:/var/lib/falkordb/data]
+    restart: unless-stopped
+  zivbot:
+    build: .
+    depends_on: [falkordb]
+    ports: ["8787:8787"]
+    environment:
+      FALKORDB_URL: redis://falkordb:6379
+      ZIV_LLM_BASE_URL: ${ZIV_LLM_BASE_URL:-}
+      ZIV_LLM_API_KEY: ${ZIV_LLM_API_KEY:-}
+      ZIV_LLM_MODEL: ${ZIV_LLM_MODEL:-nvidia/nemotron-3-super-120b-a12b:free}
+    volumes: [zivbot:/data]
+    restart: unless-stopped
+volumes:
+  falkordb: {}
+  zivbot: {}

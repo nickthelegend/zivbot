@@ -33,12 +33,15 @@ export type State = {
   rightOpen: boolean;
   exchange?: { conv: string; name: string };
   toast?: { text: string; at: number };
+  /** phone layout: showing the conversation list instead of a chat */
+  mobileList: boolean;
 };
 
 let state: State = {
   ready: false, brain: '', profile: {}, dots: [], conversations: [], presets: [], labels: {}, pendingDrafts: 0, view: 'chat',
   messages: {}, thinking: {}, working: {}, runs: {}, connectors: [], connectorProgress: {}, draftStatus: {}, connectOpen: false, newDotOpen: false,
   rightOpen: typeof window !== 'undefined' ? window.innerWidth > 1200 : true,
+  mobileList: true,
 };
 const subs = new Set<() => void>();
 export const get = () => state;
@@ -81,7 +84,7 @@ export async function loadConnectors() {
 }
 
 export async function openConversation(conv: string) {
-  set({ active: conv, view: 'chat' });
+  set({ active: conv, view: 'chat', mobileList: false });
   const r = await api.messages(conv);
   set((s) => ({ messages: { ...s.messages, [conv]: r.messages }, conversations: s.conversations.map((c) => (c.uid === conv ? { ...c, unread: 0 } : c)) }));
 }
@@ -91,6 +94,14 @@ export async function send(conv: string, text: string) {
   if (!t) return;
   await api.send(conv, t);
 }
+
+/** Inside the Android/iOS app: hand notifications to the native side. */
+export function nativeNotify(text: string, title = 'ZivBot') {
+  const rn = (window as any).ReactNativeWebView;
+  if (rn) rn.postMessage(JSON.stringify({ type: 'notify', title, text }));
+  else if (typeof Notification !== 'undefined' && Notification.permission === 'granted' && document.hidden) new Notification(title, { body: text });
+}
+if (typeof window !== 'undefined') window.addEventListener('zivbot:back', () => set({ mobileList: true }));
 
 export function toast(text: string) {
   set({ toast: { text, at: Date.now() } });
@@ -108,7 +119,7 @@ function onEvent(e: any) {
       });
       if (get().active === m.conv && get().view === 'chat') void api.messages(m.conv).catch(() => {}); // marks read server-side
       reloadState(250);
-      if (m.role === 'assistant' && m.proactive) toast('Ziv found a few things for you');
+      if (m.role === 'assistant' && m.proactive) { toast('Ziv found a few things for you'); nativeNotify(m.text.replace(/\*\*/g, '').slice(0, 140), 'Ziv found a few things for you'); }
       break;
     }
     case 'thinking':
@@ -141,7 +152,7 @@ function onEvent(e: any) {
     case 'run':
       set((s) => ({ runs: { ...s.runs, [e.run.uid]: { ...(s.runs[e.run.uid] || {}), ...e.run } } }));
       if (e.run.status === 'running') toast(`${e.run.agent} started: ${e.run.goal}`);
-      else if (e.run.status === 'succeeded') toast(`${e.run.agent} finished: ${e.run.goal}`);
+      else if (e.run.status === 'succeeded') { toast(`${e.run.agent} finished: ${e.run.goal}`); nativeNotify(`${e.run.goal} — tests ${e.run.tests || 'done'}`, `${e.run.agent} finished`); }
       break;
     case 'run.log':
       set((s) => {

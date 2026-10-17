@@ -1,11 +1,20 @@
-import * as si from 'simple-icons';
+import {
+  siNotion, siLinear, siGithub, siGoogle, siJira, siSentry, siStripe, siHubspot, siVercel, siTelegram, siDiscord, siClaude, siCursor, siX,
+  siGit, siRss, siYcombinator, siGooglecalendar, siObsidian, siWikipedia, siModelcontextprotocol, siGmail, siAnthropic,
+} from 'simple-icons';
+
+const si: Record<string, { path: string; hex: string }> = {
+  notion: siNotion, linear: siLinear, github: siGithub, google: siGoogle, jira: siJira, sentry: siSentry, stripe: siStripe, hubspot: siHubspot,
+  vercel: siVercel, telegram: siTelegram, discord: siDiscord, claude: siClaude, cursor: siCursor, x: siX, git: siGit, rss: siRss,
+  ycombinator: siYcombinator, googlecalendar: siGooglecalendar, obsidian: siObsidian, wikipedia: siWikipedia, modelcontextprotocol: siModelcontextprotocol,
+  gmail: siGmail, anthropic: siAnthropic,
+};
 
 /** Brand marks for connectors (simple-icons), with letter tiles as fallback. */
 const BRAND: Record<string, { path?: string; hex: string; letter?: string }> = {};
 function brand(slug: string) {
   if (BRAND[slug]) return BRAND[slug];
-  const key = 'si' + slug.replace(/(^|[-_])(\w)/g, (_, __, c) => c.toUpperCase()).replace(/^si(\w)/, (_, c) => 'si' + c.toUpperCase());
-  const icon = (si as any)[key] || (si as any)['si' + slug[0].toUpperCase() + slug.slice(1)];
+  const icon = si[slug];
   const fallbacks: Record<string, { hex: string; letter: string }> = {
     slack: { hex: '4A154B', letter: '#' }, openai: { hex: '111111', letter: '◎' }, opencode: { hex: '111111', letter: '>_' },
     firecrawl: { hex: 'FF6B2C', letter: '🔥' }, zivbot: { hex: 'FF7A1A', letter: 'Z' },

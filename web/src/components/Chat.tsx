@@ -34,6 +34,7 @@ export function Chat() {
   return (
     <div className="chat">
       <div className="chat-top">
+        <button className="mobile-back icon-btn round" onClick={() => set({ mobileList: true })} aria-label="Back to chats"><Icon.chevron size={16} className="flip" /></button>
         <button className="conv-pill" onClick={() => set({ rightOpen: true })}>
           {isGroup ? <AvatarStack dots={conv.dots} size={20} /> : <Avatar avatar={dot?.avatar} color={dot?.color} size={22} />}
           <span>{isGroup ? conv.name : dot?.name}</span>

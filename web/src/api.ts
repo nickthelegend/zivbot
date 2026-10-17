@@ -33,7 +33,14 @@ export type Connector = {
 export type Run = { uid: string; goal: string; status: string; startedAt: number; endedAt?: number; tests?: string; branch?: string; agent: string; agentKind: string; tickets: string[]; synthetic?: boolean; kind?: string; log?: string; diff?: string };
 
 const KEY = 'zivbot.user';
-export let userId: string | null = (() => { try { return localStorage.getItem(KEY); } catch { return null; } })();
+export let userId: string | null = (() => {
+  // ?pair=<id> (from the desktop's QR code) adopts that user's graph on this device
+  const pair = new URLSearchParams(location.search).get('pair');
+  try {
+    if (pair && /^[a-zA-Z0-9_-]{6,64}$/.test(pair)) { localStorage.setItem(KEY, pair); history.replaceState(null, '', location.pathname); }
+    return localStorage.getItem(KEY);
+  } catch { return pair; }
+})();
 
 export const API_BASE: string = (window as any).ZIVBOT_API || '';
 

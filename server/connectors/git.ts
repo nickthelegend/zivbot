@@ -9,7 +9,7 @@ import { upsertNodes, link, linkAny } from '../ingest.ts';
 import { DAY } from '../util.ts';
 
 const run = promisify(execFile);
-const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
+const ROOT = process.env.ZIV_ROOT || resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 
 export const zivHome = () => process.env.ZIV_HOME || join(homedir(), '.zivbot');
 export const workspaceDir = (userId: string) => join(zivHome(), 'workspaces', userId.replace(/[^a-zA-Z0-9_-]/g, ''));

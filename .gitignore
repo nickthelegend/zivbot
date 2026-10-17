@@ -3,3 +3,7 @@ dist
 .env
 *.log
 .DS_Store
+desktop/node_modules
+desktop/build/app
+mobile/node_modules
+mobile/.expo

@@ -18,7 +18,8 @@ export const config = {
   llm: {
     baseUrl: (env.ZIV_LLM_BASE_URL || (env.OPENROUTER_API_KEY ? 'https://openrouter.ai/api/v1' : '')).replace(/\/$/, ''),
     apiKey: env.ZIV_LLM_API_KEY || env.OPENROUTER_API_KEY || '',
-    model: env.ZIV_LLM_MODEL || 'openai/gpt-4o-mini',
+    // OpenRouter's free tier works out of the box with a free tool-calling model
+    model: env.ZIV_LLM_MODEL || (env.ZIV_LLM_API_KEY ? 'openai/gpt-4o-mini' : 'nvidia/nemotron-3-super-120b-a12b:free'),
     // "off" forces the built-in graph planner even when a key is present.
     mode: (env.ZIV_LLM || 'auto') as 'auto' | 'off',
   },

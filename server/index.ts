@@ -3,7 +3,7 @@ import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { streamSSE } from 'hono/streaming';
 import { existsSync, readFileSync } from 'node:fs';
-import { join, dirname, resolve } from 'node:path';
+import { join, dirname, resolve, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { config, llmEnabled } from './config.ts';
 import { falkor, userGraph, listGraphs } from './graph.ts';
@@ -18,7 +18,7 @@ import { toolByName } from './tools.ts';
 import { startProactive, scanUser } from './proactive.ts';
 import { LABEL_META } from './schema.ts';
 
-const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const ROOT = process.env.ZIV_ROOT || resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const app = new Hono();
 
 const user = (c: Context) => {
@@ -283,8 +283,14 @@ app.post('/api/scan', async (c) => {
 
 const dist = join(ROOT, 'dist');
 if (existsSync(dist)) {
-  app.use('/assets/*', serveStatic({ root: './dist' }));
-  app.use('/*', serveStatic({ root: './dist' }));
+  const rel = relative(process.cwd(), dist) || '.';
+  // hashed assets cache forever; the HTML shell never does (phones keep WebViews around)
+  app.use('*', async (c, next) => {
+    await next();
+    if (!c.req.path.startsWith('/api/')) c.header('cache-control', c.req.path.startsWith('/assets/') ? 'public, max-age=31536000, immutable' : 'no-cache');
+  });
+  app.use('/assets/*', serveStatic({ root: rel }));
+  app.use('/*', serveStatic({ root: rel }));
   app.get('*', (c) => c.html(readFileSync(join(dist, 'index.html'), 'utf8')));
 }
 

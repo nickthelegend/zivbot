@@ -62,6 +62,7 @@ export function ProfilePanel() {
         <div className="profile-buttons">
           <button className="btn tile" onClick={() => conv && void send(conv.uid, 'What needs my attention?')}><Icon.spark size={16} /> Brief me</button>
           <button className="btn tile" onClick={() => set({ view: 'graph' })}><Icon.graph size={16} /> Graph</button>
+          <button className="btn tile" onClick={() => window.dispatchEvent(new CustomEvent('zivbot:pair'))}><Icon.phone size={16} /> Phone</button>
         </div>
         <div className="profile-line">
           <Icon.bell size={16} /> Desktop notifications

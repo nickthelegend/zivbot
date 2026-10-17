@@ -1,0 +1,27 @@
+{
+  "name": "zivbot-desktop",
+  "productName": "ZivBot",
+  "version": "0.1.0",
+  "description": "ZivBot for macOS, Windows and Linux — your dots, on their own computer.",
+  "main": "main.cjs",
+  "license": "MIT",
+  "author": "Nivesh Gajengi",
+  "scripts": {
+    "start": "electron .",
+    "bundle": "node scripts/bundle.mjs",
+    "dist": "npm run bundle && electron-builder --mac dir"
+  },
+  "devDependencies": {
+    "electron": "33.4.11",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "dev.zivbot.desktop",
+    "productName": "ZivBot",
+    "files": ["main.cjs", "preload.cjs", "splash.html", "package.json"],
+    "extraResources": [{ "from": "build/app", "to": "app", "filter": ["**/*"] }],
+    "mac": { "category": "public.app-category.productivity", "target": [{ "target": "dmg", "arch": ["arm64"] }], "icon": "build/icon.png" },
+    "win": { "target": "nsis" },
+    "linux": { "target": "AppImage" }
+  }
+}
