@@ -7,6 +7,5 @@ RUN npm ci --no-audit --no-fund
 COPY . .
 RUN npm run build
 ENV NODE_ENV=production PORT=8787 HOST=0.0.0.0 ZIV_HOME=/data
-VOLUME /data
 EXPOSE 8787
 CMD ["npx", "tsx", "server/index.ts"]
