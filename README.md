@@ -89,6 +89,7 @@ Take FalkorDB away and nothing works.
 20. **Show the path.** Under every answer, **Show path** opens the exact Cypher run (with timings, row counts and the dot that ran it) and the subgraph the answer used.
 21. **Works while you're away.** A background loop re-runs triage and only speaks up when what needs you changes. Finished runs report back with test results.
 22. **Remember.** Say "remember that I prefer Codex for backend fixes": it becomes a `:Procedure` that `PREFERS` Codex, and the router weighs it on every routing decision.
+23. **What if someone is out?** Ask "what if Hana is out next week?" and Ziv takes her out of the graph. It reports the systems nobody else knows, the systems left with one knower, her open tickets with the best new owner for each, the decisions that lose their context, the customers who lose a contact, her meetings this week, and who covers best. Then it offers to start the handoff. The **Insights** tab runs the same simulation for everyone and ranks **who we can't lose**. Click a person in the graph explorer for the same question.
 
 ## Architecture
 
@@ -250,6 +251,19 @@ CREATE VECTOR INDEX FOR (n:Memorable) ON (n.emb) OPTIONS {dimension: 384, simila
 CALL db.idx.vector.queryNodes('Memorable', 'emb', $k, vecf32($v)) YIELD node, score
 UNWIND $uids AS u MATCH (n {uid: u})-[r]-(m) WHERE m:Person OR m:System OR m:Org OR m:Ticket OR m:Decision
 RETURN u, type(r), m.name
+```
+
+**What if someone is out — who else knows each system they know:**
+```cypher
+MATCH (s:System)
+OPTIONAL MATCH (a:Person)<-[:AUTHORED_BY]-(:Commit)-[:TOUCHES]->(:File)-[:IN_REPO]->(:Repo)-[:IMPLEMENTS]->(s)
+WITH s, collect(DISTINCT a.uid) AS k1
+OPTIONAL MATCH (s)<-[:ABOUT]-(:Doc)<-[:OWNS]-(b:Person)
+WITH s, k1, collect(DISTINCT b.uid) AS k2
+OPTIONAL MATCH (s)<-[:AFFECTS]-(:Ticket)-[:ASSIGNED_TO]->(c:Person)
+WITH s, k1, k2, collect(DISTINCT c.uid) AS k3
+WITH s, k1 + k2 + k3 AS k WHERE $p IN k
+RETURN s.name, s.tier, k   // remove $p from k: empty = orphaned, one left = fragile
 ```
 
 **Single points of failure:**

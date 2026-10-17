@@ -1,5 +1,6 @@
 import type { UserGraph } from './graph.ts';
 import { DAY } from './util.ts';
+import { absenceImpact } from './absence.ts';
 import { findDuplicates } from './identity.ts';
 
 /**
@@ -12,10 +13,32 @@ export type InsightItem = { title: string; detail: string; uids: string[]; sever
 export type InsightSection = { key: string; title: string; blurb: string; items: InsightItem[] };
 
 export async function insights(g: UserGraph, since = Date.now() - DAY): Promise<InsightSection[]> {
-  const [bus, spof, groups, load, waiting, changed, fleet, dups, stale] = await Promise.all([
-    busFactor(g), singlePoints(g), workingGroups(g), overloaded(g), waitingOnYou(g), whatChanged(g, since), fleetHealth(g), duplicates(g), staleKnowledge(g),
+  const [bus, spof, groups, load, waiting, changed, fleet, dups, stale, absence] = await Promise.all([
+    busFactor(g), singlePoints(g), workingGroups(g), overloaded(g), waitingOnYou(g), whatChanged(g, since), fleetHealth(g), duplicates(g), staleKnowledge(g), keyPeopleAbsence(g),
   ]);
-  return [bus, spof, waiting, stale, load, dups, groups, changed, fleet].filter((s) => s.items.length);
+  return [bus, spof, absence, waiting, stale, load, dups, groups, changed, fleet].filter((s) => s.items.length);
+}
+
+/** Simulate each colleague being out and rank who leaves the biggest hole. */
+async function keyPeopleAbsence(g: UserGraph): Promise<InsightSection> {
+  const people = await g.q(`MATCH (p:Person) WHERE NOT coalesce(p.external, false) AND NOT coalesce(p.me, false) RETURN p.uid AS uid`, {}, '~colleagues');
+  const sims = (await Promise.all(people.map((p) => absenceImpact(g, p.uid)))).filter((a): a is NonNullable<typeof a> => !!a && a.severity >= 8);
+  sims.sort((a, b) => b.severity - a.severity);
+  return {
+    key: 'absence', title: 'Who we can\'t lose', blurb: 'Each person removed from the graph, one at a time',
+    items: sims.slice(0, 4).map((a) => ({
+      title: `Without ${a.person.name}`,
+      detail: [
+        a.orphaned.length && `${a.orphaned.map((s) => s.name).join(', ')} left with nobody`,
+        a.tickets.length && `${a.tickets.length} open ticket${a.tickets.length > 1 ? 's' : ''} to hand off`,
+        a.customers.length && `${a.customers.map((c) => c.name).join(', ')} lose${a.customers.length > 1 ? '' : 's'} a contact`,
+        a.decisions.length && (a.decisions.length > 1 ? `${a.decisions.length} decisions lose their context` : '1 decision loses its context'),
+      ].filter(Boolean).join(' · '),
+      uids: [a.person.uid, ...a.orphaned.map((s) => s.uid)],
+      severity: a.severity >= 20 ? 'high' as const : 'medium' as const,
+      ask: `What if ${a.person.name} is out next week?`,
+    })),
+  };
 }
 
 async function duplicates(g: UserGraph): Promise<InsightSection> {

@@ -219,3 +219,17 @@ test('stale knowledge: a runbook older than the incidents on its system', async 
   const stale = (await insights(g)).find((s) => s.key === 'stale');
   assert.ok(stale?.items.some((i) => /billing-db failover runbook/.test(i.title) && i.severity === 'high'));
 });
+
+test('what if someone is out: orphaned systems, handoffs ranked by the graph, stalled decisions', async () => {
+  const r = await run('what_if_absent', { person: 'Priya Raman' });
+  const a = r.data as any;
+  assert.equal(a.person.name, 'Priya Raman');
+  const keys = a.tickets.map((t: any) => t.key);
+  assert.ok(keys.includes('LUM-142'), 'her open P1 needs a new owner');
+  for (const t of a.tickets) assert.notEqual(t.next?.uid, a.person.uid, 'never hands work back to the person who is out');
+  assert.ok(a.decisions.some((d: any) => /Stripe/.test(d.title)), 'the billing decision loses its context');
+  assert.ok(a.severity > 0);
+  assert.match(r.text, /If \*\*Priya Raman\*\* is out/);
+  const ins = (await run('insights')).data as any[];
+  assert.ok(Array.isArray(ins));
+});

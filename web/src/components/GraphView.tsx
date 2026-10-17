@@ -1,10 +1,18 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api, type GraphEdge, type GraphNode } from '../api';
-import { useStore, set } from '../store';
+import { useStore, set, get, openConversation, send } from '../store';
 import { ForceGraph } from './ForceGraph';
 import { Icon } from './icons';
 import { InsightsPanel } from './InsightsPanel';
 import { AlgorithmsPanel, SchemaPanel } from './AlgoPanels';
+
+/** Hand a question about a node to Ziv's chat. */
+async function askZiv(q: string) {
+  const conv = get().dots[0]?.conv;
+  if (!conv) return;
+  await openConversation(conv);
+  void send(conv, q);
+}
 
 const SAMPLES = [
   ['Who knows payments-api', `MATCH (p:Person)<-[:AUTHORED_BY]-(c:Commit)-[:TOUCHES]->(:File)-[:IN_REPO]->(:Repo)-[:IMPLEMENTS]->(:System {name:'payments-api'})\nRETURN p.name AS person, count(DISTINCT c) AS commits ORDER BY commits DESC`],
@@ -103,7 +111,11 @@ export function GraphView() {
               <div className="nd-head"><span className="chip-dot" style={{ background: labels[selected.label]?.color }} /> {selected.label}<button className="icon-btn" onClick={() => setSelected(null)}><Icon.close size={15} /></button></div>
               <h3>{selected.name}</h3>
               <div className="nd-body">{detail ? detail.split('\n').slice(1).map((l, i) => <div key={i}>{l.replace(/\*\*/g, '')}</div>) : <span className="spinner sm" />}</div>
-              <button className="btn ghost sm" onClick={() => set({ entity: selected.id })}>Open</button>
+              <div className="nd-actions">
+                <button className="btn ghost sm" onClick={() => set({ entity: selected.id })}>Open</button>
+                {selected.label === 'Person' && <button className="btn ghost sm" onClick={() => void askZiv(`What if ${selected.name} is out next week?`)}>What if they're out?</button>}
+                {selected.label === 'System' && <button className="btn ghost sm" onClick={() => void askZiv(`What breaks if ${selected.name} goes down?`)}>What if it's down?</button>}
+              </div>
             </div>
           ) : (
             <div className="cypher-console">

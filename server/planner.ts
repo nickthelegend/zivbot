@@ -152,6 +152,12 @@ export async function plan(ctx: Ctx, input: string, opts: PlanOpts = {}): Promis
     return done(await writeBrief(ctx, call, ents[0]));
   }
 
+  // ---- absence simulation: "what if Priya is out next week?", "who covers for Raj?"
+  if (/\b(leaves?|leaving|quits?|is out|are out|be out|off sick|on leave|on vacation|on holiday|parental leave|goes away|gets sick|hit by a bus|covers? for|cover for|without)\b/.test(low)) {
+    const who = first('Person');
+    if (who) return done((await call('what_if_absent', { person: who.uid })).text);
+  }
+
   if (/\b(reassign|rebalance|who should (take|own|handle|pick up)|hand .* to someone|move .* to someone)\b/.test(low)) {
     const key = t.match(/\b([A-Z]{2,6}-\d+)\b/i)?.[1]?.toUpperCase();
     const tk = key ? `ticket:${key}` : first('Ticket')?.uid;

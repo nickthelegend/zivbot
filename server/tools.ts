@@ -11,6 +11,7 @@ import { runAlgorithm, ALGORITHMS, type AlgoName } from './algorithms.ts';
 import { RULE_KINDS, kindFromText, createRule, evaluateRules } from './rules.ts';
 import { timeline } from './timeline.ts';
 import { findDuplicates } from './identity.ts';
+import { absenceImpact, rankOwners } from './absence.ts';
 
 /**
  * Graph tools — the agent's hands. The LLM agent, the offline planner and the
@@ -809,29 +810,7 @@ export const tools: Tool[] = [
       const t = await resolve(g, ticket, ['Ticket']);
       if (!t) return { text: `I couldn't find ticket ${ticket}.` };
       const cur = await g.one(`MATCH (t:Ticket {uid:$u}) OPTIONAL MATCH (t)-[:ASSIGNED_TO]->(a:Person) RETURN t.key AS key, t.title AS title, a.uid AS who, a.name AS whoName`, { u: t.uid }, 'current owner');
-      const cands = await g.q(
-        `MATCH (t:Ticket {uid:$u})-[:AFFECTS]->(s:System)
-         MATCH (p:Person) WHERE NOT coalesce(p.external, false) AND NOT coalesce(p.me, false)
-         OPTIONAL MATCH (p)<-[:AUTHORED_BY]-(c:Commit)-[:TOUCHES]->(:File)-[:IN_REPO]->(:Repo)-[:IMPLEMENTS]->(s)
-         WITH t, s, p, count(DISTINCT c) AS commits
-         OPTIONAL MATCH (p)-[:OWNS]->(d:Doc)-[:ABOUT]->(s)
-         WITH t, s, p, commits, count(DISTINCT d) AS docs
-         OPTIONAL MATCH (p)<-[:ASSIGNED_TO]-(past:Ticket)-[:AFFECTS]->(s) WHERE past <> t
-         WITH t, p, sum(commits) AS commits, sum(docs) AS docs, count(DISTINCT past) AS tickets
-         OPTIONAL MATCH (p)-[:WORKS_ON]->(:Project)-[:USES]->(:System)<-[:AFFECTS]-(t)
-         WITH p, commits, docs, tickets, count(*) > 0 AS onProject
-         OPTIONAL MATCH (p)<-[:ASSIGNED_TO]-(open:Ticket {status:'open'})
-         WITH p, commits, docs, tickets, onProject, count(DISTINCT open) AS load
-         OPTIONAL MATCH (p)-[:ATTENDS]->(e:Event) WHERE e.start > $now AND e.start < $soon
-         RETURN p.uid AS uid, p.name AS name, p.role AS role, commits, docs, tickets, onProject, load, count(DISTINCT e) AS meetings`,
-        { u: t.uid, now: Date.now(), soon: Date.now() + 2 * DAY },
-        'candidates: knowledge of the affected systems vs current load',
-      );
-      const scored = cands
-        .map((c) => ({ ...c, know: 3 * c.commits + 3 * c.docs + 2 * c.tickets + (c.onProject ? 1 : 0), cost: 2 * c.load + 0.5 * c.meetings }))
-        .map((c) => ({ ...c, score: +(c.know - c.cost).toFixed(1) }))
-        .filter((c) => c.know > 0)
-        .sort((a, b) => b.score - a.score);
+      const scored = await rankOwners(g, t.uid);
       const best = scored.find((c) => c.uid !== cur?.who);
       if (!best) return { text: `Nobody else in the graph knows the systems ${cur?.key} touches — keep it with ${cur?.whoName || 'its owner'}.` };
       const n = (k: number, w: string) => `${k} ${w}${k === 1 ? '' : 's'}`;
@@ -855,6 +834,48 @@ export const tools: Tool[] = [
         ],
         data: { best, scored },
       };
+    },
+  },
+
+  {
+    name: 'what_if_absent',
+    description: 'Simulate a person being out (leave, sick, quitting): systems only they know, systems left with one knower, open tickets and who should take each, decisions that stall, customers who lose their contact, meetings this week, colleagues who only connect through them, and who covers best.',
+    params: { type: 'object', properties: { person: { type: 'string' } }, required: ['person'] },
+    async run({ g, dot }, { person }) {
+      const p = await resolve(g, person, ['Person']);
+      if (!p) return { text: `I couldn't find a person called "${person}".` };
+      const a = await absenceImpact(g, p.uid);
+      if (!a) return { text: `I couldn't find ${person}.` };
+      const first = a.person.name.split(' ')[0];
+      const money = (n?: number) => (n ? ` ($${Math.round(n / 1000)}k ARR)` : '');
+      const lines: string[] = [];
+      if (a.orphaned.length) lines.push(`- **Nobody else knows** ${a.orphaned.map((s) => `${s.name}${s.tier ? ` (${s.tier})` : ''}`).join(', ')}${a.orphaned.some((s) => s.customers.length) ? ` — used by ${[...new Set(a.orphaned.flatMap((s) => s.customers))].join(', ')}` : ''}`);
+      if (a.fragile.length) lines.push(`- **Down to one person:** ${a.fragile.map((s) => `${s.name} → only ${s.left}`).join('; ')}`);
+      if (a.tickets.length) lines.push(`- **${a.tickets.length} open ticket${a.tickets.length > 1 ? 's need' : ' needs'} an owner:** ${a.tickets.map((t) => `${t.key}${t.priority ? ` ${t.priority}` : ''} → ${t.next ? `**${t.next.name}**` : 'nobody qualified'}`).join(', ')}`);
+      if (a.decisions.length) lines.push(`- **Decisions:** ${a.decisions.map((d) => `${d.title} (${d.why})`).join('; ')}`);
+      if (a.customers.length) lines.push(`- **Customers who talk to ${first}:** ${a.customers.map((c) => `${c.name}${money(c.arr)} via ${c.via.join(' + ')}`).join(', ')}`);
+      if (a.meetings.length) lines.push(`- **This week:** ${a.meetings.map((m) => `${m.title} (${when(m.start)})${m.others === 0 ? ' — only them' : ''}`).join(', ')}`);
+      if (a.isolated.length) lines.push(`- **Only connected through ${first}:** ${a.isolated.map((x) => x.name).join(', ')}`);
+      const cover = a.cover[0];
+      const level = a.severity >= 20 ? 'a big hole' : a.severity >= 8 ? 'a real gap' : 'manageable';
+      const text = lines.length
+        ? `If **${a.person.name}** is out, it's ${level}:\n${lines.join('\n')}${cover ? `\n\nBest cover: **${cover.name}** — shares ${cover.overlap.join(', ')}.` : ''}`
+        : `If ${a.person.name} is out, nothing in the graph depends on them alone.`;
+      const handoff = a.tickets.filter((t) => t.next);
+      const cards: Card[] = [
+        { type: 'graph', title: `Without ${first}`, focus: [a.person.uid, ...a.orphaned.map((s) => s.uid), ...a.tickets.map((t) => t.uid), ...a.customers.map((c) => c.uid), ...(cover ? [cover.uid] : [])].slice(0, 14) },
+      ];
+      if (handoff.length || a.orphaned.length) {
+        cards.push({
+          type: 'options', question: 'Want me to start the handoff?',
+          options: [
+            ...handoff.slice(0, 2).map((t, i) => ({ key: String.fromCharCode(65 + i), label: `Move ${t.key} to ${t.next!.name}`, value: `Reassign ${t.key}` })),
+            ...(a.orphaned[0] ? [{ key: String.fromCharCode(65 + Math.min(handoff.length, 2)), label: `Who else could learn ${a.orphaned[0].name}?`, value: `Who knows ${a.orphaned[0].name}?` }] : []),
+          ],
+        });
+      }
+      void dot;
+      return { text, cards, data: a };
     },
   },
 

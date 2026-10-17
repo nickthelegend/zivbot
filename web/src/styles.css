@@ -409,6 +409,7 @@ textarea.draft-body { resize: vertical; outline: none; }
 .nd-head { display: flex; gap: 8px; align-items: center; color: var(--muted); font-size: 12.5px; }
 .nd-head .icon-btn { margin-left: auto; }
 .nd-body { font-size: 12.5px; color: var(--text-2); display: flex; flex-direction: column; gap: 3px; margin-bottom: 12px; }
+.nd-actions { display: flex; flex-wrap: wrap; gap: 6px; }
 
 /* ---------------------------------------------------------------- activity */
 .activity-view { display: grid; grid-template-columns: 1fr 1.4fr 1fr; gap: 16px; padding: 22px 24px; overflow-y: auto; height: 100%; align-items: start; }
@@ -675,7 +676,7 @@ textarea.draft-body { resize: vertical; outline: none; }
 .insight-card header { margin-bottom: 6px; }
 .insight-card h3 { margin: 0; font: 600 15px Sora, Inter, sans-serif; }
 .insight-card header small { font-size: 12px; }
-.insight-card.k-bus, .insight-card.k-spof { border-color: color-mix(in srgb, var(--accent) 35%, var(--line)); }
+.insight-card.k-bus, .insight-card.k-spof, .insight-card.k-absence { border-color: color-mix(in srgb, var(--accent) 35%, var(--line)); }
 .insight-item { display: flex; gap: 10px; align-items: flex-start; padding: 8px 2px; border-top: 1px solid var(--line); }
 .insight-item:first-of-type { border-top: 0; }
 .insight-item b { display: block; font-size: 13.5px; font-weight: 600; }
