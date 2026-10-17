@@ -205,8 +205,11 @@ app.get('/api/graph', async (c) => {
   const g = await userGraph(user(c));
   const focus = (c.req.query('focus') || '').split(',').filter(Boolean);
   const limit = Math.min(Number(c.req.query('limit') || 400), 1500);
+  const exact = (c.req.query('ids') || '').split(',').filter(Boolean).slice(0, 200);
   let nodes;
-  if (focus.length) {
+  if (exact.length) {
+    nodes = await g.q(`MATCH (n) WHERE n.uid IN $ids RETURN ${nodeShape}`, { ids: exact }, 'exact nodes');
+  } else if (focus.length) {
     nodes = await g.q(
       `MATCH (f) WHERE f.uid IN $focus
        OPTIONAL MATCH (f)-[r]-(m) WHERE NOT any(l IN labels(m) WHERE l IN $hidden) AND type(r) <> 'COLLABORATES'

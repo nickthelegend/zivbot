@@ -4,7 +4,7 @@ import { api, events, type Connector, type Conversation, type Dot, type Message,
 /** One tiny external store for the whole app, fed by the API and the SSE stream. */
 
 export type View = 'chat' | 'graph' | 'activity';
-type Thinking = { dot: string; steps: { label: string; ms: number; rows: number }[]; tool?: string };
+type Thinking = { dot: string; steps: { label: string; ms: number; rows: number }[]; tool?: string; touched: string[] };
 
 export type State = {
   ready: boolean;
@@ -140,20 +140,24 @@ function onEvent(e: any) {
       if (m.role === 'assistant' && m.proactive) { toast('Ziv found a few things for you'); nativeNotify(m.text.replace(/\*\*/g, '').slice(0, 140), 'Ziv found a few things for you'); }
       break;
     }
-    case 'thinking':
-      set((s) => {
+    case 'thinking': {
+      const drop = () => set((s) => {
         const conv = { ...(s.thinking[e.conv] || {}) };
-        if (e.on) conv[e.dot] = { dot: e.dot, steps: [] };
-        else delete conv[e.dot];
+        delete conv[e.dot];
         return { thinking: { ...s.thinking, [e.conv]: conv } };
       });
+      if (e.on) set((s) => ({ thinking: { ...s.thinking, [e.conv]: { ...(s.thinking[e.conv] || {}), [e.dot]: { dot: e.dot, steps: [], touched: [] } } } }));
+      // let the live graph linger a beat so you can see what the dot walked through
+      else if ((get().thinking[e.conv]?.[e.dot]?.touched.length || 0) > 3) setTimeout(drop, 1400);
+      else drop();
       break;
+    }
     case 'step':
       set((s) => {
         const conv = s.thinking[e.conv];
         const t = conv?.[e.dot];
         if (!t) return {};
-        return { thinking: { ...s.thinking, [e.conv]: { ...conv, [e.dot]: { ...t, steps: [...t.steps.slice(-30), { label: e.label, ms: e.ms, rows: e.rows }] } } } };
+        return { thinking: { ...s.thinking, [e.conv]: { ...conv, [e.dot]: { ...t, steps: [...t.steps.slice(-30), { label: e.label, ms: e.ms, rows: e.rows }], touched: [...t.touched, ...(e.touched || [])].slice(-120) } } } };
       });
       break;
     case 'tool':

@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import type { Message } from '../api';
+import { api, type Message, type GraphNode, type GraphEdge } from '../api';
+import { ForceGraph } from './ForceGraph';
 import { useStore, set, get, send, openConversation } from '../store';
 import { Avatar, AvatarStack } from './Avatar';
 import { CardView, ExchangeChip, useDotMap } from './Cards';
@@ -47,7 +48,7 @@ export function Chat() {
           {list.map((m, i) => (
             <MessageRow key={m.uid} m={m} prev={list[i - 1]} isGroup={isGroup} answered={answerAfter(i)} latest={i === lastCardIdx} />
           ))}
-          {thinkers.map((t) => <Thinking key={t.dot} name={dotMap.get(t.dot)?.name || 'Dot'} avatar={dotMap.get(t.dot)} steps={t.steps} tool={t.tool} />)}
+          {thinkers.map((t) => <Thinking key={t.dot} name={dotMap.get(t.dot)?.name || 'Dot'} avatar={dotMap.get(t.dot)} steps={t.steps} tool={t.tool} touched={t.touched} />)}
           {!!working?.length && working.length > 1 && <div className="working-line"><AvatarStack dots={working.map((n) => [...dotMap.values()].find((d) => d.name === n)!).filter(Boolean)} size={16} /> {working[0]}{working.length > 1 ? ` and ${working.length - 1} other${working.length > 2 ? 's' : ''}` : ''} {working.length > 1 ? 'are' : 'is'} working.</div>}
         </div>
       </div>
@@ -109,12 +110,25 @@ function AvatarWithCard({ dot }: { dot?: ReturnType<ReturnType<typeof useDotMap>
   );
 }
 
-function Thinking({ name, avatar, steps, tool }: { name: string; avatar?: { avatar?: string; color?: string }; steps: { label: string; ms: number; rows: number }[]; tool?: string }) {
+function Thinking({ name, avatar, steps, tool, touched }: { name: string; avatar?: { avatar?: string; color?: string }; steps: { label: string; ms: number; rows: number }[]; tool?: string; touched: string[] }) {
   const visible = steps.slice(-4);
+  const [g, setG] = useState<{ nodes: GraphNode[]; edges: GraphEdge[] } | null>(null);
+  // redraw the live graph as the touched set grows (throttled)
+  useEffect(() => {
+    if (!touched.length) return;
+    const t = setTimeout(() => void api.graph({ ids: touched.slice(-80) }).then((r) => setG({ nodes: r.nodes.map((n) => ({ ...n, focus: touched.slice(-6).includes(n.id) })), edges: r.edges })).catch(() => {}), 250);
+    return () => clearTimeout(t);
+  }, [touched.length]);
   return (
     <div className="bot-row thinking">
       <div className="bot-col">
         <div className="thinking-head"><Avatar avatar={avatar?.avatar} color={avatar?.color} size={18} busy /> {name} is {tool ? `using ${tool.replace(/_/g, ' ')}` : 'thinking'}<span className="dots"><i /><i /><i /></span></div>
+        {g && g.nodes.length > 1 && (
+          <div className="live-graph">
+            <ForceGraph nodes={g.nodes} edges={g.edges} height={170} labels="none" wheel={false} />
+            <span className="live-count">{g.nodes.length} nodes touched</span>
+          </div>
+        )}
         {visible.length > 0 && (
           <div className="steps">
             {visible.map((s, i) => <div key={i} className="step"><Icon.database size={11} /> {s.label} <small>{s.rows} rows · {s.ms}ms</small></div>)}

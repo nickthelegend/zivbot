@@ -30,7 +30,17 @@ export type DotInfo = { uid: string; name: string; role: string; stage?: string;
 export async function think(userId: string, dot: DotInfo, conv: string, text: string, opts: { from?: string; inGroup?: boolean } = {}): Promise<Reply> {
   const g = await userGraph(userId);
   publish(userId, { type: 'thinking', dot: dot.uid, conv, on: true });
-  const trace: Trace = { queries: [], touched: new Set(), onQuery: (q) => publish(userId, { type: 'step', dot: dot.uid, conv, label: q.label, ms: q.ms, rows: q.rows }) };
+  // stream the steps and every node the Cypher touches, so the UI can draw the dot thinking
+  const sent = new Set<string>();
+  const trace: Trace = {
+    queries: [], touched: new Set(),
+    onQuery: (q) => {
+      if (q.internal) return;
+      const fresh = [...trace.touched].filter((u) => !sent.has(u)).slice(0, 40);
+      fresh.forEach((u) => sent.add(u));
+      publish(userId, { type: 'step', dot: dot.uid, conv, label: q.label, ms: q.ms, rows: q.rows, touched: fresh });
+    },
+  };
   const ctx: Ctx = { g, userId, dot: dot.uid };
   const delegated: string[] = [];
   let r: Omit<Reply, 'answer'>;
