@@ -13,7 +13,7 @@ export const ALGORITHMS: Record<AlgoName, { title: string; what: string; default
   pagerank: { title: 'PageRank', what: 'Who or what matters most, by how the rest of the graph points at it', defaults: { label: 'Person', rel: 'COLLABORATES' } },
   betweenness: { title: 'Betweenness', what: 'Brokers and bottlenecks: the nodes most shortest paths run through', defaults: { label: 'System', rel: 'DEPENDS_ON' } },
   harmonic: { title: 'Harmonic centrality', what: 'How close each node is to everything else', defaults: { label: 'Person', rel: 'COLLABORATES' } },
-  communities: { title: 'Communities (label propagation)', what: 'The groups that actually form', defaults: { label: 'Person', rel: 'COLLABORATES' } },
+  communities: { title: 'Communities (label propagation)', what: 'The groups that actually form (over strong ties)', defaults: { label: 'Person', rel: 'CLOSE_TO' } },
   components: { title: 'Connected components (WCC)', what: 'Islands: parts of the graph nothing connects to', defaults: { label: 'System', rel: 'DEPENDS_ON' } },
   reach: { title: 'Reachability (BFS)', what: 'Everything reachable from one node within N hops', defaults: { rel: 'DEPENDS_ON' }, needs: ['source'] },
   shortest_path: { title: 'Weighted shortest paths', what: 'Cheapest routes between two nodes (algo.SPpaths)', defaults: { rel: 'COLLABORATES' }, needs: ['source', 'target'] },
@@ -91,11 +91,13 @@ export async function runAlgorithm(g: UserGraph, a: AlgoArgs): Promise<AlgoResul
     case 'shortest_path': {
       if (!a.source || !a.target) throw new Error('shortest_path needs a source and a target');
       // COLLABORATES carries a strength (weight); invert it so strong ties are cheap to travel
-      if (R === 'COLLABORATES') await g.q(`MATCH ()-[c:COLLABORATES]->() SET c.cost = 1.0 / (1.0 + coalesce(c.weight, 0))`, {}, '~edge costs from collaboration strength');
+      // (and my own ties live on IN_TOUCH, so a route can start or end at me)
+      if (R === 'COLLABORATES') await g.q(`MATCH ()-[c:COLLABORATES|IN_TOUCH]->() SET c.cost = 1.0 / (1.0 + coalesce(c.weight, 0))`, {}, '~edge costs from collaboration strength');
       const weightProp = R === 'COLLABORATES' ? 'cost' : 'w';
+      const relTypes = R === 'COLLABORATES' ? `'COLLABORATES', 'IN_TOUCH'` : `'${R}'`;
       const rows = await g.q(
         `MATCH (s {uid: $src}), (t {uid: $dst})
-         CALL algo.SPpaths({sourceNode: s, targetNode: t, relTypes: ['${R}'], weightProp: '${weightProp}', maxLen: 6, pathCount: 3}) YIELD path, pathWeight
+         CALL algo.SPpaths({sourceNode: s, targetNode: t, relTypes: [${relTypes}], weightProp: '${weightProp}', maxLen: 6, pathCount: 3}) YIELD path, pathWeight
          RETURN [n IN nodes(path) | n.uid] AS uids, [n IN nodes(path) | n.name] AS names, pathWeight AS weight`,
         { src: a.source, dst: a.target },
         `weighted shortest paths over ${R}`,

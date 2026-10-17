@@ -5,6 +5,7 @@ import { upsertNodes, link } from './ingest.ts';
 import { publish } from './bus.ts';
 import { uid, clip } from './util.ts';
 import { pastRuns } from './seed/lumen.ts';
+import { config } from './config.ts';
 
 const exec = promisify(execFile);
 
@@ -142,10 +143,11 @@ export async function routeJob(g: UserGraph, systems: string[]): Promise<RouteCh
     if (r.nearWins) { score += 1.5 * r.nearWins; reasons.push(`${r.nearWins} win${r.nearWins > 1 ? 's' : ''} on neighbouring systems`); }
     if (r.allRuns) { score += r.allWins / r.allRuns; }
     if (r.preference) { score += 2 * r.preference; reasons.push(r.preference > 0 ? 'you said you prefer it' : 'you said to avoid it'); }
-    if (!r.installed) { score -= 100; reasons.push('not installed on this computer'); }
+    // the web demo has no CLIs: still show how the graph would pick, and say where it runs
+    if (!r.installed && !config.hosted) { score -= 100; reasons.push('not installed on this computer'); }
     if (r.limitedUntil > now) { score -= 50; reasons.push(`out of quota until ${new Date(r.limitedUntil).toLocaleTimeString()}`); }
     if (!reasons.length) reasons.push('no history yet');
-    return { agent: r.agent, kind: r.kind, name: r.name, score: +score.toFixed(2), reasons, installed: !!r.installed };
+    return { agent: r.agent, kind: r.kind, name: r.name, score: +score.toFixed(2), reasons, installed: !!r.installed || config.hosted };
   }).sort((a, b) => b.score - a.score);
 }
 

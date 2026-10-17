@@ -1,6 +1,6 @@
 import { userGraph } from './graph.ts';
 import { config } from './config.ts';
-import { allUsers } from './users.ts';
+import { allUsers, pruneUsers } from './users.ts';
 import { listDots, postMessage, getDot } from './memory.ts';
 import { proactiveTriage } from './agent.ts';
 import { runHooks } from './fleet.ts';
@@ -18,6 +18,9 @@ import { evaluateRules } from './rules.ts';
 export function startProactive() {
   if (config.proactiveMs > 0) {
     setInterval(() => void scanAll().catch((e) => console.error('[proactive]', e.message)), config.proactiveMs).unref();
+  }
+  if (config.hosted) {
+    setInterval(() => void pruneUsers().then((n) => n && console.log(`[prune] dropped ${n} idle demo graphs`)).catch((e) => console.error('[prune]', e.message)), 6 * 3_600_000).unref();
   }
   runHooks.push(async (userId, g, r) => {
     if (!r.dot) return;

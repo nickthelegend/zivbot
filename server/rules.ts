@@ -78,8 +78,8 @@ export const RULE_KINDS: Record<string, Kind> = {
     defaults: {},
     cypher: `MATCH (t:Ticket {status: 'open', priority: 'P1'})-[:AFFECTS]->(s:System)
              MATCH (s)<-[:DEPENDS_ON*0..3]-(:System)<-[:USES]-(o:Org {kind: 'customer'})
-             WITH t, collect(DISTINCT o.name) AS customers, sum(DISTINCT o.arr) AS arr
-             RETURN t.uid AS uid, t.key AS key, customers, arr`,
+             WITH t, collect(DISTINCT o) AS orgs
+             RETURN t.uid AS uid, t.key AS key, [o IN orgs | o.name] AS customers, reduce(n = 0, o IN orgs | n + coalesce(o.arr, 0)) AS arr`,
     toMatch: (r) => ({ uid: r.uid, text: `${r.key} reaches ${r.customers.join(', ')} ($${Math.round(r.arr / 1000)}k ARR)`, action: { label: `Fix ${r.key}`, value: `Fix ${r.key}` } }),
   },
 };

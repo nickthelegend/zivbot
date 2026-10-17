@@ -13,6 +13,12 @@ export function TraceDrawer() {
   const [internal, setInternal] = useState(false);
   const [open, setOpen] = useState<number | null>(null);
   useEffect(() => { setT(null); setOpen(null); if (id) void api.answer(id).then(setT).catch(() => {}); }, [id]);
+  useEffect(() => {
+    if (!id) return;
+    const on = (e: KeyboardEvent) => { if (e.key === 'Escape') set({ trace: undefined }); };
+    window.addEventListener('keydown', on);
+    return () => window.removeEventListener('keydown', on);
+  }, [id]);
   if (!id) return null;
   const queries = (t?.queries || []).filter((q) => internal || !q.internal);
   const total = (t?.queries || []).reduce((s, q) => s + q.ms, 0);

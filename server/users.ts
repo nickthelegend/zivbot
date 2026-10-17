@@ -9,7 +9,7 @@ import { syncFleet } from './fleet.ts';
 export async function ensureUser(id?: string) {
   const reg = await registryGraph();
   if (id && /^[a-zA-Z0-9_-]{6,64}$/.test(id)) {
-    const hit = await reg.one(`MATCH (u:User {id:$id}) RETURN u.id AS id`, { id }, 'find user');
+    const hit = await reg.one(`MATCH (u:User {id:$id}) SET u.lastSeen = $now RETURN u.id AS id`, { id, now: Date.now() }, 'find user');
     if (hit) {
       const g = await userGraph(id);
       await ensureSchema(g);
@@ -17,7 +17,7 @@ export async function ensureUser(id?: string) {
     }
   }
   const uid = id && /^[a-zA-Z0-9_-]{6,64}$/.test(id) ? id : randomUUID().replace(/-/g, '').slice(0, 20);
-  await reg.q(`MERGE (u:User {id:$id}) ON CREATE SET u.createdAt = $now`, { id: uid, now: Date.now() }, 'register user');
+  await reg.q(`MERGE (u:User {id:$id}) ON CREATE SET u.createdAt = $now SET u.lastSeen = $now`, { id: uid, now: Date.now() }, 'register user');
   const g = await userGraph(uid);
   await ensureSchema(g);
   await syncFleet(g);
@@ -27,9 +27,24 @@ export async function ensureUser(id?: string) {
   return { id: uid, created: true };
 }
 
-export async function allUsers(): Promise<string[]> {
+/** Users seen recently, newest first — the background loop only works for people who are around. */
+export async function allUsers(activeWithinMs = 2 * 86_400_000, max = 50): Promise<string[]> {
   const reg = await registryGraph();
-  return (await reg.q(`MATCH (u:User) RETURN u.id AS id`)).map((r) => r.id);
+  return (await reg.q(
+    `MATCH (u:User) WHERE coalesce(u.lastSeen, u.createdAt, 0) > $since RETURN u.id AS id ORDER BY coalesce(u.lastSeen, u.createdAt) DESC LIMIT $max`,
+    { since: Date.now() - activeWithinMs, max },
+  )).map((r) => r.id);
+}
+
+/** Hosted demo: drop graphs nobody has opened in a week. */
+export async function pruneUsers(idleMs = 7 * 86_400_000) {
+  const reg = await registryGraph();
+  const stale = (await reg.q(`MATCH (u:User) WHERE coalesce(u.lastSeen, u.createdAt, 0) < $before RETURN u.id AS id LIMIT 200`, { before: Date.now() - idleMs })).map((r) => r.id as string);
+  for (const id of stale) {
+    await (await userGraph(id)).drop().catch(() => {});
+    await reg.q(`MATCH (u:User {id:$id}) DELETE u`, { id });
+  }
+  return stale.length;
 }
 
 /** After the first workspace lands, Ziv brings in its specialists. */

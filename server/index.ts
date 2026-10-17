@@ -44,6 +44,17 @@ const user = (c: Context) => {
   if (!id || !/^[a-zA-Z0-9_-]{6,64}$/.test(id)) throw new HttpError(401, 'missing user');
   return id;
 };
+/** Tiny fixed-window rate limiter (per key, in memory — enough for one hosted instance). */
+const windows = new Map<string, { n: number; until: number }>();
+function limit(key: string, max: number, ms: number) {
+  const now = Date.now();
+  const w = windows.get(key);
+  if (!w || w.until < now) { windows.set(key, { n: 1, until: now + ms }); return; }
+  if (++w.n > max) throw new HttpError(429, 'Slow down a little — try again in a minute.');
+}
+setInterval(() => { const now = Date.now(); for (const [k, w] of windows) if (w.until < now) windows.delete(k); }, 60_000).unref();
+const ip = (c: Context) => (c.req.header('x-forwarded-for') || '').split(',')[0].trim() || c.req.header('x-real-ip') || 'local';
+
 class HttpError extends Error { constructor(public status: number, msg: string) { super(msg); } }
 app.onError((e, c) => {
   if (!(e instanceof HttpError)) console.error('[api]', e);
@@ -60,6 +71,8 @@ app.get('/api/health', async (c) => {
 
 app.post('/api/session', async (c) => {
   const body = await c.req.json().catch(() => ({}));
+  // new graphs cost real work: cap how fast one address (and everyone together) can create them
+  if (config.hosted && !body.userId) { limit(`session:${ip(c)}`, 8, 3_600_000); limit('session:all', 300, 3_600_000); }
   return c.json(await ensureUser(body.userId));
 });
 
@@ -72,7 +85,7 @@ app.get('/api/state', async (c) => {
     g.one(`MATCH (p:Profile) RETURN p.name AS name`),
     g.q(`MATCH (d:Draft {status:'pending'}) RETURN count(d) AS n`),
   ]);
-  return c.json({ dots, conversations, profile: profile || {}, pendingDrafts: pending[0]?.n || 0, brain: llmEnabled() ? `llm:${config.llm.model}` : 'graph-planner', presets: DOT_PRESETS, labels: LABEL_META });
+  return c.json({ dots, conversations, profile: profile || {}, pendingDrafts: pending[0]?.n || 0, hosted: config.hosted, brain: llmEnabled() ? `llm:${config.llm.model}` : 'graph-planner', presets: DOT_PRESETS, labels: LABEL_META });
 });
 
 app.get('/api/events', (c) => {
@@ -98,6 +111,7 @@ app.get('/api/conversations/:id/messages', async (c) => {
 
 app.post('/api/conversations/:id/messages', async (c) => {
   const id = user(c);
+  if (config.hosted) limit(`msg:${id}`, 30, 60_000);
   const { text } = await c.req.json();
   if (!text?.trim()) throw new HttpError(400, 'empty message');
   void handleUserMessage(id, c.req.param('id'), String(text).slice(0, 4000)).catch((e) => {
@@ -226,7 +240,7 @@ const nodeShape = `n.uid AS id, [l IN labels(n) WHERE l <> 'Searchable'][0] AS l
 
 async function edgesAmong(g: Awaited<ReturnType<typeof userGraph>>, ids: string[], rel?: string) {
   // COLLABORATES is derived and dense, so it only shows when asked for by name
-  return g.q(`MATCH (a)-[r]->(b) WHERE a.uid IN $ids AND b.uid IN $ids AND (type(r) <> 'COLLABORATES' OR type(r) = $rel) RETURN a.uid AS source, b.uid AS target, type(r) AS type`, { ids, rel: rel ?? '' }, 'edges among nodes');
+  return g.q(`MATCH (a)-[r]->(b) WHERE a.uid IN $ids AND b.uid IN $ids AND (NOT type(r) IN ['COLLABORATES', 'IN_TOUCH', 'CLOSE_TO'] OR type(r) = $rel) RETURN a.uid AS source, b.uid AS target, type(r) AS type`, { ids, rel: rel ?? '' }, 'edges among nodes');
 }
 
 app.get('/api/graph', async (c) => {
@@ -238,14 +252,18 @@ app.get('/api/graph', async (c) => {
   if (exact.length) {
     nodes = await g.q(`MATCH (n) WHERE n.uid IN $ids RETURN ${nodeShape}`, { ids: exact }, 'exact nodes');
   } else if (focus.length) {
-    nodes = await g.q(
-      `MATCH (f) WHERE f.uid IN $focus
-       OPTIONAL MATCH (f)-[r]-(m) WHERE NOT any(l IN labels(m) WHERE l IN $hidden) AND type(r) <> 'COLLABORATES'
-       WITH collect(DISTINCT f) + collect(DISTINCT m) AS ns UNWIND ns AS n WITH DISTINCT n WHERE n IS NOT NULL
-       RETURN ${nodeShape} LIMIT $limit`,
-      { focus, hidden: HIDDEN, limit: Math.min(limit, 120) },
+    // compact (cards in chat): the focus plus the neighbours that tie it together, readable at a glance
+    const compact = c.req.query('compact') === '1';
+    const hidden = compact ? [...HIDDEN, 'Email', 'ChatMessage', 'Thread', 'Commit', 'File', 'Episode', 'Answer'] : HIDDEN;
+    const fs = await g.q(`MATCH (n) WHERE n.uid IN $focus RETURN ${nodeShape}`, { focus }, 'focus nodes');
+    const nb = await g.q(
+      `MATCH (f)-[r]-(n) WHERE f.uid IN $focus AND NOT n.uid IN $focus AND NOT any(l IN labels(n) WHERE l IN $hidden) AND NOT type(r) IN ['COLLABORATES', 'IN_TOUCH', 'CLOSE_TO']
+       WITH n, count(DISTINCT f) AS ties ORDER BY ties DESC LIMIT $limit
+       RETURN ${nodeShape}`,
+      { focus, hidden, limit: compact ? Math.max(6, 22 - fs.length) : Math.min(limit, 120) },
       'neighbourhood',
     );
+    nodes = [...fs, ...nb];
   } else {
     const labels = (c.req.query('labels') || '').split(',').filter(Boolean);
     nodes = await g.q(
@@ -346,7 +364,9 @@ app.get('/api/files/:uid', async (c) => {
 });
 
 app.post('/api/cypher', async (c) => {
-  const g = await userGraph(user(c));
+  const id = user(c);
+  if (config.hosted) limit(`cypher:${id}`, 30, 60_000);
+  const g = await userGraph(id);
   const { cypher } = await c.req.json();
   const r = await toolByName('run_cypher')!.run({ g, userId: '', dot: '' }, { cypher });
   return c.json({ rows: r.data ?? [], text: r.text });

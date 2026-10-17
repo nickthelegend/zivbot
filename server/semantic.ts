@@ -21,10 +21,30 @@ const remote = () => (process.env.ZIV_EMBED_BASE_URL && process.env.ZIV_EMBED_AP
 const STOP = new Set('a an the and or of to in on for with at by from is are was were be been it this that these those i you we they he she our your their my me us them as not no do does did can could should would will just so if then than there here about into over under up out what who when where why how which'.split(' '));
 const norm = (w: string) => w.replace(/(ing|ed|es|s)$/, (m) => (w.length > 5 ? '' : m));
 
+// A small concept layer so the local embedder bridges everyday wording and
+// the words teams actually write ("slow portal" ≈ "latency on checkout-web").
+const CONCEPTS: [RegExp, string][] = [
+  [/^(slow|slowly|sluggish|lag|laggy|latency|p95|forever|timeout|times?|hang)$/, '#slow'],
+  [/^(broken|bug|fail|fails|error|errors|crash|crashes|down|outage|incident|broke|loop)$/, '#broken'],
+  [/^(invoice|invoices|invoic|billing|bill|charge|payment|payments|stripe|chargebee)$/, '#billing'],
+  [/^(login|log|sso|auth|signin|saml|password)$/, '#auth'],
+  [/^(portal|checkout|website|site|page|dashboard)$/, '#web'],
+  [/^(customer|customers|client|clients|account|accounts|brightwave|kestrel)$/, '#customer'],
+  [/^(launch|ship|release|rollout|go-live|golive|cutover)$/, '#launch'],
+  [/^(money|revenue|arr|price|pricing|cost|deal)$/, '#money'],
+  [/^(angry|upset|escalate|escalation|frustrated|chasing|chase|follow|waiting)$/, '#unhappy'],
+  [/^(phone|mobile|android|ios|app|push|notification|notifications)$/, '#mobile'],
+  [/^(firmware|ota|device|devices|hardware|bootloader|helios)$/, '#device'],
+  [/^(eu|europe|vat|gdpr)$/, '#eu'],
+];
+const concept = (w: string) => CONCEPTS.find(([re]) => re.test(w))?.[1];
+
 function tokens(text: string) {
-  const words = text.toLowerCase().replace(/[^\p{L}\p{N}\s-]/gu, ' ').split(/[\s-]+/).filter((w) => w.length > 1 && !STOP.has(w)).map(norm);
-  const grams = words.slice(0, -1).map((w, i) => `${w}_${words[i + 1]}`);
-  return [...words, ...grams];
+  const words = text.toLowerCase().replace(/[^\p{L}\p{N}\s-]/gu, ' ').split(/[\s-]+/).filter((w) => w.length > 1 && !STOP.has(w));
+  const concepts = words.map(concept).filter((c): c is string => !!c);
+  const stems = words.map(norm);
+  const grams = stems.slice(0, -1).map((w, i) => `${w}_${stems[i + 1]}`);
+  return [...stems, ...grams, ...concepts];
 }
 
 function hashEmbed(text: string): number[] {
@@ -35,7 +55,7 @@ function hashEmbed(text: string): number[] {
     const h = createHash('md5').update(t).digest();
     const idx = h.readUInt32LE(0) % DIM_LOCAL;
     const sign = h[4] & 1 ? 1 : -1;
-    const w = (1 + Math.log(c)) * (t.includes('_') ? 0.6 : 1);
+    const w = (1 + Math.log(c)) * (t.includes('_') ? 0.6 : t.startsWith('#') ? 0.8 : 1);
     v[idx] += sign * w;
     // a second hash spreads each feature, which makes collisions cheaper
     const idx2 = h.readUInt32LE(8) % DIM_LOCAL;
@@ -101,7 +121,7 @@ export function scheduleEmbed(g: UserGraph) {
 export type SemanticHit = { uid: string; name: string; label: string; distance: number; text?: string; about: { uid: string; name: string; label: string; rel: string }[] };
 
 /** Vector search, then one graph hop to what each hit is about. */
-export async function semanticSearch(g: UserGraph, query: string, opts: { k?: number; labels?: string[] } = {}) {
+export async function semanticSearch(g: UserGraph, query: string, opts: { k?: number; labels?: string[]; maxDistance?: number } = {}) {
   await embedPending(g);
   const [v] = await embed([query]);
   await ensureIndex(g, v.length);
@@ -109,13 +129,15 @@ export async function semanticSearch(g: UserGraph, query: string, opts: { k?: nu
   const hits = await g.q(
     `CALL db.idx.vector.queryNodes('Memorable', 'emb', $k, vecf32($v)) YIELD node, score
      WITH node, score, [l IN labels(node) WHERE NOT l IN ['Searchable','Memorable']][0] AS label
-     WHERE size($labels) = 0 OR label IN $labels
+     WHERE (size($labels) = 0 OR label IN $labels) AND NOT coalesce(node.newsletter, false)
      RETURN node.uid AS uid, node.name AS name, label, score AS distance, coalesce(node.text, node.body, node.subject, node.title) AS text
      ORDER BY distance`,
     { k: k * 3, v, labels: opts.labels || [] },
     `vector search "${query.slice(0, 40)}"`,
   );
-  const top = hits.filter((h) => h.label !== 'Episode' || hits.length < 4).slice(0, k);
+  // cosine distance: past this, a hit shares words by accident rather than meaning
+  const maxDistance = opts.maxDistance ?? (remote() ? 0.75 : 0.85);
+  const top = hits.filter((h) => h.distance <= maxDistance).filter((h) => h.label !== 'Episode' || hits.length < 4).slice(0, k);
   const about = top.length
     ? await g.q(
       `UNWIND $uids AS u MATCH (n {uid: u})-[r]-(m)

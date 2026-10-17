@@ -180,6 +180,12 @@ export async function plan(ctx: Ctx, input: string, opts: PlanOpts = {}): Promis
     if (x) return done((await call('who_knows', { ref: x.uid })).text);
   }
 
+  // ---- a symptom on a system: "the customer portal is slow", "why is checkout broken?"
+  if (!/(what breaks|goes down|go down|blast radius|impact of|if .* (fails|dies|is down))/.test(low) && /\b(slow|sluggish|laggy|lagging|takes forever|timing out|times out|broken|failing|erroring|errors?|not working|down|why is|keeps crashing|crash(es|ing)?)\b/.test(low)) {
+    const x = first('System', 'Repo');
+    if (x) return done((await call('diagnose', { system: x.uid })).text);
+  }
+
   if (/(what breaks|goes down|go down|blast radius|impact of|if .* (fails|dies|is down)|outage)/.test(low)) {
     const x = first('System', 'Repo');
     if (x) return done((await call('blast_radius', { ref: x.uid })).text);
@@ -220,15 +226,15 @@ export async function plan(ctx: Ctx, input: string, opts: PlanOpts = {}): Promis
     [/\bpage ?rank\b/, 'pagerank'],
     [/\bbetweenness|bottleneck|broker/, 'betweenness'],
     [/\bharmonic|closest to everyone|most reachable/, 'harmonic'],
-    [/\b(communit(y|ies)|clusters?|label propagation)\b/, 'communities'],
+    [/\b(communit(y|ies)|clusters?|label propagation|working groups?|who works (closely )?together)\b/, 'communities'],
     [/\b(islands?|isolated|disconnected|connected components?|wcc)\b/, 'components'],
     [/\b(reachable from|downstream of|everything .* depends on|what depends on)\b/, 'reach'],
     [/\b(shortest path|best route|introduce me|intro to|warm intro|get to)\b/, 'shortest_path'],
   ];
   const hitAlgo = algo.find(([re]) => re.test(low));
   if (hitAlgo) {
-    const lab = /\b(system|service)s?\b/.test(low) ? 'System' : /\bprojects?\b/.test(low) ? 'Project' : /\b(people|person|team|who)\b/.test(low) ? 'Person' : undefined;
-    const rel = lab === 'System' ? 'DEPENDS_ON' : lab === 'Person' ? 'COLLABORATES' : undefined;
+    const lab = /\b(system|service)s?\b/.test(low) ? 'System' : /\bprojects?\b/.test(low) ? 'Project' : /\b(people|person|team|who|groups?)\b/.test(low) ? 'Person' : undefined;
+    const rel = lab === 'System' ? 'DEPENDS_ON' : hitAlgo[1] === 'communities' ? 'CLOSE_TO' : lab === 'Person' ? 'COLLABORATES' : undefined;
     const args: Record<string, unknown> = { algorithm: hitAlgo[1], ...(lab ? { label: lab } : {}), ...(rel ? { rel } : {}) };
     if (hitAlgo[1] === 'reach') { if (!ents[0]) return done('Reachable from what? Name a system or person.'); args.source = ents[0].uid; args.rel = ents[0].label === 'Person' ? 'COLLABORATES' : 'DEPENDS_ON'; args.direction = /depends on|downstream|who/.test(low) ? 'in' : 'out'; }
     if (hitAlgo[1] === 'shortest_path') {
@@ -245,7 +251,7 @@ export async function plan(ctx: Ctx, input: string, opts: PlanOpts = {}): Promis
     return done(`Here's what the graph says you should worry about:\n\n${(await call('insights', { focus })).text}`);
   }
 
-  if (/(important|key|central|influential) (people|person|contacts)|who matters|brokers?\b|working groups/.test(low)) {
+  if (/(important|key|central|influential) (people|person|contacts)|who matters|brokers?\b/.test(low)) {
     return done((await call('key_people')).text);
   }
 
@@ -262,7 +268,7 @@ export async function plan(ctx: Ctx, input: string, opts: PlanOpts = {}): Promis
     return done(r.text);
   }
 
-  if (/\b(calendar|agenda|meetings?|my day|my week|tomorrow|today)\b/.test(low) && !/\b(reply|email|draft)\b/.test(low)) {
+  if (/\b(calendar|agenda|meetings?|my day|my week|tomorrow|today)\b/.test(low) && !/\b(reply|email|draft|needs? me|what should|plate|priorit|urgent|attention|triage|important)\b/.test(low)) {
     return done(`Here's what's coming up:\n${(await call('agenda', { days: 4 })).text}`);
   }
 
@@ -293,9 +299,30 @@ export async function plan(ctx: Ctx, input: string, opts: PlanOpts = {}): Promis
     return done(r.text);
   }
 
+  // ---- counts across the graph: "which project has the most open tickets?"
+  const most = low.match(/\b(?:which|what|who)\b.*?\b(projects?|systems?|services?|customers?|clients?|accounts?|people|person|teams?|who)\b.*\b(?:most|fewest|biggest|largest)\b\s*(.*)$/);
+  if (most) {
+    const [, noun, rest] = most;
+    const label = /project/.test(noun) ? 'Project' : /system|service/.test(noun) ? 'System' : /customer|client|account/.test(noun) ? 'Org' : /team/.test(noun) ? 'Team' : 'Person';
+    const metric = /depend/.test(rest) ? 'dependents' : /customer|client|arr|revenue/.test(rest) ? 'customers' : /people|members|staff|engineers/.test(rest) ? 'people' : /ticket|issue|incident|bug|work|load/.test(rest) ? 'open_tickets' : null;
+    if (metric) return done((await call('rank_entities', { label, metric })).text);
+  }
+
+  // ---- "should I worry about X?", "is payments-api ok?", "how is Brightwave doing?"
+  if ((/\b(worr\w*|concern\w*|healthy|risky|at risk|safe|how is|how's|status of|health of)\b/.test(low) || /\bis .+ (ok|okay|fine)\b/.test(low)) && ents.length) {
+    // a system and a vendor can share a name (Stripe): the system is the one that breaks
+    const x = first('System') || first('Project') || ents[0];
+    if (x.label === 'System') return done((await call('blast_radius', { ref: x.uid })).text);
+    if (x.label === 'Project') return done((await call('critical_path', { project: x.uid })).text);
+    if (x.label === 'Org') return done((await call('customer_history', { org: x.uid })).text);
+    if (x.label === 'Person') return done((await call('what_if_absent', { person: x.uid })).text);
+  }
+
   // fuzzy, "anything about…" questions go to semantic memory + graph expansion
   if (/^(anything|has anyone|did anyone|what('s| is| has) (the team|everyone|anyone) (said|saying)|any (mention|talk|news))|\b(similar to|related to|reminds)\b/.test(low) || (!ents.length && t.split(/\s+/).length > 3)) {
-    return done((await call('semantic_search', { query: t })).text);
+    const r = await call('semantic_search', { query: t });
+    if ((r.data as any)?.hits?.length) return done(r.text);
+    return done(fallback(cards));
   }
 
   // "tell me about X", "who is X", or a bare entity name
@@ -307,7 +334,22 @@ export async function plan(ctx: Ctx, input: string, opts: PlanOpts = {}): Promis
     if (hits[0].score > 1.5 * (hits[1]?.score || 0)) return done((await call('describe_entity', { ref: hits[0].uid })).text);
     return done(`Here's what I found in your graph:\n${hits.map((h: Row) => `- ${h.label} **${h.name}**`).join('\n')}\n\nAsk me about any of them.`);
   }
-  return done(`I couldn't find anything about that in your graph yet. Try asking what needs your attention, who knows a system, what breaks if something goes down, or to fix a ticket.`);
+  return done(fallback(cards));
+}
+
+/** Nothing matched: say so plainly and offer questions the graph can answer. */
+function fallback(cards: Card[]) {
+  cards.push({
+    type: 'options', question: 'Try one of these',
+    options: [
+      { key: 'A', label: 'What needs me today?', value: 'What needs me today?' },
+      { key: 'B', label: "What's blocking the EU launch?", value: "What's blocking the EU launch?" },
+      { key: 'C', label: 'Which customers are at risk?', value: 'Which customers are at risk?' },
+      { key: 'D', label: 'What breaks if payments-api goes down?', value: 'What breaks if payments-api goes down?' },
+      { key: 'E', label: 'What if Hana is out next week?', value: 'What if Hana is out next week?' },
+    ],
+  });
+  return `I don't have anything in your graph that answers that, and I'd rather say so than guess. I answer by walking how people, systems, customers, tickets and decisions connect — for example:`;
 }
 
 export async function triageReply(ctx: Ctx, call: (n: string, a?: any) => Promise<ToolResult>, cards: Card[]) {

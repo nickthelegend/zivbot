@@ -144,13 +144,13 @@ export const tools: Tool[] = [
       const node = await g.one(`MATCH (n {uid:$u}) RETURN n`, { u: n.uid }, `load ${n.label}`);
       const nb = await g.q(
         `MATCH (n {uid:$u})-[r]-(m)
-         WHERE NOT m:Episode AND type(r) <> 'COLLABORATES'
+         WHERE NOT (m:Episode OR m:Answer OR m:Draft OR m:Dot OR m:Conversation OR m:Connector) AND NOT type(r) IN ['COLLABORATES', 'IN_TOUCH', 'CLOSE_TO']
          RETURN type(r) AS rel, startNode(r) = n AS out, m.uid AS uid, m.name AS name, [l IN labels(m) WHERE l <> 'Searchable'][0] AS label
          LIMIT 60`,
         { u: n.uid },
         `neighbours of ${n.name}`,
       );
-      const props = Object.entries(node.n).filter(([k]) => !['uid', 'search', 'payload', 'log', '_label', 'aliases'].includes(k)).map(([k, v]) => `${k}: ${typeof v === 'number' && v > 1e12 ? when(v) : clip(String(v), 160)}`);
+      const props = Object.entries(node.n).filter(([k]) => !['uid', 'search', 'payload', 'log', '_label', 'aliases', 'emb', 'firstSeen', 'lastSeen', 'community'].includes(k)).map(([k, v]) => `${k}: ${typeof v === 'number' && v > 1e12 ? when(v) : typeof v === 'number' && !Number.isInteger(v) ? v.toFixed(3) : clip(String(v), 160)}`);
       const groups = new Map<string, string[]>();
       for (const r of nb) {
         const key = r.out ? `→ ${r.rel}` : `← ${r.rel}`;
@@ -194,9 +194,10 @@ export const tools: Tool[] = [
          OPTIONAL MATCH (t)-[:ASSIGNED_TO]->(a:Person)
          OPTIONAL MATCH (dep:System)-[:DEPENDS_ON*1..3]->(s)
          OPTIONAL MATCH (cust:Org {kind:'customer'})-[:USES]->(used:System) WHERE used = s OR used = dep
+         WITH t, o, a, collect(DISTINCT s.name) AS systems, count(DISTINCT dep) AS dependents, collect(DISTINCT cust) AS custs
          RETURN t.uid AS uid, t.key AS key, t.title AS title, t.priority AS priority, t.at AS at,
-                collect(DISTINCT s.name) AS systems, o.name AS org, a.name AS assignee,
-                count(DISTINCT dep) AS dependents, collect(DISTINCT cust.name) AS customers, sum(DISTINCT coalesce(cust.arr,0)) AS arrAtRisk`,
+                systems, o.name AS org, a.name AS assignee, dependents,
+                [c IN custs | c.name] AS customers, reduce(n = 0, c IN custs | n + coalesce(c.arr, 0)) AS arrAtRisk`,
         {},
         'open P1/P2 tickets with blast radius and customers at risk',
       );
@@ -268,11 +269,14 @@ export const tools: Tool[] = [
         for (const r of await g.q(q, { u: x.uid }, `who knows ${x.name}: ${how}`)) {
           const s = score.get(r.uid) || { name: r.name as string, score: 0, why: [] as string[] };
           s.score += w * r.n;
-          s.why.push(`${r.n} ${how}`);
+          s.why.push(`${r.n} ${r.n === 1 ? how.replace(/s$/, '').replace(/ies$/, 'y') : how}`);
           score.set(r.uid, s);
         }
       }
       const ranked = [...score.entries()].map(([uid, v]) => ({ uid, ...v })).sort((a, b) => b.score - a.score).slice(0, 6);
+      // a chat handle ("priya.r") that resolves to a directory name gets labelled, not listed as a second expert
+      const dupOf = new Map((await findDuplicates(g)).map((p) => (p.a.name.includes(' ') ? [p.b.uid, p.a.name] : [p.a.uid, p.b.name]) as [string, string]));
+      for (const r of ranked) if (dupOf.has(r.uid)) r.why.push(`probably ${dupOf.get(r.uid)} on another app`);
       if (!ranked.length) return { text: `Nobody in the graph is connected to ${x.name} yet.` };
       const bus = ranked.filter((r) => r.score >= ranked[0].score * 0.5).length === 1 && ranked[0].score >= 6;
       return {
@@ -303,17 +307,18 @@ export const tools: Tool[] = [
          OPTIONAL MATCH (o:Org {kind:'customer'})-[:USES]->(x)
          OPTIONAL MATCH (pr:Project)-[:USES]->(x)
          OPTIONAL MATCH (t:Ticket {status:'open'})-[:AFFECTS]->(x)
-         RETURN collect(DISTINCT o.name) AS customers, sum(DISTINCT coalesce(o.arr,0)) AS arr, collect(DISTINCT pr.name) AS projects, collect(DISTINCT t.key) AS tickets`,
+         RETURN collect(DISTINCT o.name) AS customers, collect(DISTINCT pr.name) AS projects, collect(DISTINCT t.key) AS tickets,
+                collect(DISTINCT o.uid) + collect(DISTINCT pr.uid) + collect(DISTINCT t.uid) AS reached`,
         { all },
         'customers, projects and tickets on the blast radius',
       );
       const own = await g.q(`MATCH (s:System {uid:$u})<-[:USES]-(:Project)<-[:OWNS]-(p:Person) RETURN DISTINCT p.name AS name`, { u: sys.uid }, 'owners to notify');
-      const i = impact[0] || { customers: [], arr: 0, projects: [], tickets: [] };
+      const i = impact[0] || { customers: [], projects: [], tickets: [], reached: [] };
       // customers listed per-system, so recompute ARR over distinct orgs
       const arr = (await g.one(`UNWIND $all AS u MATCH (o:Org {kind:'customer'})-[:USES]->(:System {uid:u}) WITH DISTINCT o RETURN sum(o.arr) AS arr`, { all }, 'ARR exposed'))?.arr || 0;
       return {
         text: `If **${sys.name}** goes down:\n- Dependent systems: ${deps.length ? deps.map((d) => `${d.name} (${d.hops} hop${d.hops > 1 ? 's' : ''})`).join(', ') : 'none'}\n- Customers exposed: ${i.customers.join(', ') || 'none'}${arr ? ` — $${Math.round(arr / 1000)}k ARR` : ''}\n- Projects affected: ${i.projects.join(', ') || 'none'}\n- Open tickets already on this path: ${i.tickets.join(', ') || 'none'}\n- Notify: ${own.map((o) => o.name).join(', ') || 'no owner on record'}`,
-        cards: [{ type: 'graph', title: `Blast radius: ${sys.name}`, focus: all }],
+        cards: [{ type: 'graph', title: `Blast radius: ${sys.name}`, focus: [...all, ...(i.reached || [])], exact: true }],
         data: { system: sys, dependents: deps, ...i, arr },
       };
     },
@@ -328,7 +333,7 @@ export const tools: Tool[] = [
       if (!a || !b) return { text: `I couldn't find ${!a ? from : to}.` };
       const rows = await g.q(
         `MATCH p = (a {uid:$a})-[*1..4]-(b {uid:$b})
-         WHERE none(r IN relationships(p) WHERE type(r) IN ['COLLABORATES','IN_THREAD','BY','USED','WRITTEN_BY'])
+         WHERE none(r IN relationships(p) WHERE type(r) IN ['COLLABORATES','IN_TOUCH','CLOSE_TO','IN_THREAD','BY','USED','WRITTEN_BY'])
            AND none(n IN nodes(p) WHERE n:Episode OR n:Answer OR n:Draft OR n:Conversation)
          RETURN [n IN nodes(p) | n.name] AS names, [n IN nodes(p) | n.uid] AS uids, [r IN relationships(p) | type(r)] AS rels, length(p) AS hops
          ORDER BY hops LIMIT 3`,
@@ -642,12 +647,16 @@ export const tools: Tool[] = [
       if (args.source && !src) return { text: `I couldn't find "${args.source}".` };
       if (args.target && !dst) return { text: `I couldn't find "${args.target}".` };
       const r = await runAlgorithm(g, { ...args, algorithm: args.algorithm as AlgoName, source: src, target: dst });
+      // grouping algorithms read as groups: biggest first, loners left out of the list
+      const grouped = r.rows.some((x) => x.group != null) ? [...r.rows.reduce((m, x) => m.set(x.group!, [...(m.get(x.group!) || []), x]), new Map<number, typeof r.rows>()).values()].filter((xs) => xs.length > 1).sort((a, b) => b.length - a.length) : null;
       const body = r.paths
         ? r.paths.map((p, i) => `${i + 1}. ${p.names.join(' → ')} (cost ${p.weight})`).join('\n')
+        : grouped?.length
+        ? grouped.slice(0, 6).map((xs, i) => `${i + 1}. ${xs.map((x) => `**${x.name}**`).join(', ')}`).join('\n')
         : r.rows.slice(0, 10).map((x, i) => `${i + 1}. **${x.name}** (${x.label})${x.score != null ? ` — ${Number(x.score).toFixed(3)}` : ''}${x.group != null ? ` — group ${x.group}` : ''}`).join('\n');
       return {
         text: `**${r.title}** over ${r.label ? `:${r.label}` : 'the graph'}${r.rel ? ` via ${r.rel}` : ''} — ${r.what.toLowerCase()}.\n\n${body}\n\n${r.summary}`,
-        cards: [{ type: 'graph', title: r.title, focus: [...(src ? [src] : []), ...(dst ? [dst] : []), ...r.rows.slice(0, 16).map((x) => x.uid)] }],
+        cards: [{ type: 'graph', title: r.title, focus: [...(src ? [src] : []), ...(dst ? [dst] : []), ...(grouped?.length ? grouped.flat() : r.rows).slice(0, 16).map((x) => x.uid)] }],
         data: r,
       };
     },
@@ -946,6 +955,93 @@ export const tools: Tool[] = [
           ...(options.length ? [{ type: 'options' as const, question: 'Want me to start on one?', options }] : []),
         ],
         data: rows,
+      };
+    },
+  },
+
+  {
+    name: 'rank_entities',
+    description: 'Rank projects, systems, customers, people or teams by a graph count: open tickets, dependents (multi-hop DEPENDS_ON), customers exposed, or people. Answers "which project has the most open tickets?", "which system has the most dependents?".',
+    params: { type: 'object', properties: { label: { type: 'string', enum: ['Project', 'System', 'Org', 'Person', 'Team'] }, metric: { type: 'string', enum: ['open_tickets', 'dependents', 'customers', 'people'] } }, required: ['label', 'metric'] },
+    async run({ g }, { label, metric }) {
+      const Q: Record<string, Record<string, string>> = {
+        open_tickets: {
+          Project: `MATCH (x:Project) OPTIONAL MATCH (t:Ticket {status:'open'})-[:PART_OF]->(x) RETURN x.uid AS uid, x.name AS name, count(DISTINCT t) AS n, collect(DISTINCT t.key)[0..4] AS ex`,
+          System: `MATCH (x:System) OPTIONAL MATCH (t:Ticket {status:'open'})-[:AFFECTS]->(x) RETURN x.uid AS uid, x.name AS name, count(DISTINCT t) AS n, collect(DISTINCT t.key)[0..4] AS ex`,
+          Org: `MATCH (x:Org {kind:'customer'}) OPTIONAL MATCH (t:Ticket {status:'open'})-[:FOR]->(x) RETURN x.uid AS uid, x.name AS name, count(DISTINCT t) AS n, collect(DISTINCT t.key)[0..4] AS ex`,
+          Person: `MATCH (x:Person) WHERE NOT coalesce(x.external, false) OPTIONAL MATCH (t:Ticket {status:'open'})-[:ASSIGNED_TO]->(x) RETURN x.uid AS uid, x.name AS name, count(DISTINCT t) AS n, collect(DISTINCT t.key)[0..4] AS ex`,
+        },
+        dependents: {
+          System: `MATCH (x:System) OPTIONAL MATCH (d:System)-[:DEPENDS_ON*1..4]->(x) RETURN x.uid AS uid, x.name AS name, count(DISTINCT d) AS n, collect(DISTINCT d.name)[0..4] AS ex`,
+        },
+        customers: {
+          System: `MATCH (x:System) OPTIONAL MATCH (o:Org {kind:'customer'})-[:USES]->(:System)-[:DEPENDS_ON*0..3]->(x) RETURN x.uid AS uid, x.name AS name, count(DISTINCT o) AS n, collect(DISTINCT o.name)[0..4] AS ex`,
+          Project: `MATCH (x:Project) OPTIONAL MATCH (x)-[:USES]->(:System)<-[:DEPENDS_ON*0..3]-(:System)<-[:USES]-(o:Org {kind:'customer'}) RETURN x.uid AS uid, x.name AS name, count(DISTINCT o) AS n, collect(DISTINCT o.name)[0..4] AS ex`,
+        },
+        people: {
+          Project: `MATCH (x:Project) OPTIONAL MATCH (p:Person)-[:WORKS_ON|OWNS]->(x) RETURN x.uid AS uid, x.name AS name, count(DISTINCT p) AS n, collect(DISTINCT p.name)[0..4] AS ex`,
+          Team: `MATCH (x:Team) OPTIONAL MATCH (p:Person)-[:MEMBER_OF]->(x) RETURN x.uid AS uid, x.name AS name, count(DISTINCT p) AS n, collect(DISTINCT p.name)[0..4] AS ex`,
+          Org: `MATCH (x:Org) OPTIONAL MATCH (p:Person)-[:WORKS_AT]->(x) RETURN x.uid AS uid, x.name AS name, count(DISTINCT p) AS n, collect(DISTINCT p.name)[0..4] AS ex`,
+        },
+      };
+      const q = Q[metric]?.[label];
+      if (!q) return { text: `I can rank ${Object.entries(Q).map(([m, ls]) => `${Object.keys(ls).join('/')} by ${m.replace('_', ' ')}`).join('; ')}.` };
+      const rows = (await g.q(`${q} ORDER BY n DESC LIMIT 6`, {}, `rank ${label} by ${metric}`)).filter((r) => r.n > 0);
+      const what = metric.replace('_', ' ');
+      const noun = label === 'Org' ? 'customer' : label.toLowerCase();
+      if (!rows.length) return { text: `No ${noun} has any ${what} right now.` };
+      return {
+        text: `**${rows[0].name}** has the most ${what} (${rows[0].n}).\n${rows.map((r, i) => `${i + 1}. **${r.name}** — ${r.n} ${r.n === 1 ? what.replace(/s$/, '') : what}${r.ex.length ? `: ${r.ex.join(', ')}` : ''}`).join('\n')}`,
+        cards: [{ type: 'graph', title: `${noun}s by ${what}`, focus: rows.slice(0, 4).map((r) => r.uid) }],
+        data: rows,
+      };
+    },
+  },
+
+  {
+    name: 'diagnose',
+    description: 'A system looks slow or broken: walk DEPENDS_ON upstream (0-4 hops) to find open incidents on it or anything it relies on, nearest first, plus who reported the symptom and who owns the likely cause.',
+    params: { type: 'object', properties: { system: { type: 'string' } }, required: ['system'] },
+    async run({ g }, { system }) {
+      const s = await resolve(g, system, ['System', 'Repo']);
+      if (!s) return { text: `I couldn't find a system called "${system}".` };
+      const sys = s.label === 'Repo' ? (await g.one(`MATCH (:Repo {uid:$u})-[:IMPLEMENTS]->(x:System) RETURN x.uid AS uid, x.name AS name`, { u: s.uid })) || s : s;
+      const causes = await g.q(
+        `MATCH p = (s:System {uid:$u})-[:DEPENDS_ON*0..4]->(d:System)<-[:AFFECTS]-(t:Ticket {status:'open'})
+         OPTIONAL MATCH (t)-[:ASSIGNED_TO]->(a:Person)
+         WITH t, a, min(length(p)) - 1 AS hops, collect([n IN nodes(p) WHERE n:System | n.name])[0] AS route, collect([n IN nodes(p) WHERE n:System | n.uid])[0] AS routeUids
+         RETURN t.uid AS uid, t.key AS key, t.title AS title, t.priority AS priority, t.body AS body, a.name AS owner, hops, route, routeUids
+         ORDER BY hops, t.priority`,
+        { u: sys.uid },
+        `open incidents on ${sys.name} and everything it depends on`,
+      );
+      const reports = await g.q(
+        `MATCH (s:System {uid:$u})<-[:MENTIONS]-(m)-[:FROM|POSTED]-(p:Person) WHERE (m:Email OR m:ChatMessage) AND NOT coalesce(p.me, false)
+         OPTIONAL MATCH (p)-[:WORKS_AT]->(o:Org)
+         RETURN DISTINCT p.name AS who, o.name AS org, coalesce(m.subject, m.name) AS said, m.at AS at ORDER BY at DESC LIMIT 3`,
+        { u: sys.uid },
+        `who has mentioned ${sys.name}`,
+      );
+      if (!causes.length) return { text: `Nothing open on **${sys.name}** or anything it depends on. If it's misbehaving, this is new — want me to draft a ticket?` };
+      const pri = (p?: string) => (p === 'P1' ? 0 : p === 'P2' ? 1 : 2);
+      const best = [...causes].sort((a, b) => pri(a.priority) - pri(b.priority) || a.hops - b.hops)[0];
+      const where = (c: any) => (c.hops === 0 ? `on ${sys.name} itself` : `on ${c.route[c.route.length - 1]}, ${c.hops} hop${c.hops > 1 ? 's' : ''} upstream (${c.route.join(' → ')})`);
+      const text = [
+        `**Likely cause:** ${best.key} ${best.priority || ''} — ${best.title}, ${where(best)}.${best.owner ? ` ${best.owner} has it.` : ' Nobody owns it yet.'}`,
+        best.body ? `> ${clip(best.body, 160)}` : '',
+        causes.length > 1 ? `\nAlso open on the path:\n${causes.filter((c) => c.uid !== best.uid).slice(0, 4).map((c) => `- ${c.key} ${c.priority || ''} — ${clip(c.title, 60)} (${c.hops ? `${c.route[c.route.length - 1]}, ${c.hops} hop${c.hops > 1 ? 's' : ''} up` : 'here'})`).join('\n')}` : '',
+        reports.length ? `\nWho noticed: ${reports.map((r) => `${r.who}${r.org && r.org !== 'Lumen Labs' ? ` (${r.org})` : ''}`).join(', ')}.` : '',
+      ].filter(Boolean).join('\n');
+      return {
+        text,
+        cards: [
+          { type: 'graph', title: `Why ${sys.name} hurts`, focus: [...new Set([sys.uid, ...causes.slice(0, 4).flatMap((c) => [c.uid, ...c.routeUids])])], exact: true },
+          { type: 'options', question: 'Next step?', options: [
+            { key: 'A', label: best.priority === 'P1' ? `Fix ${best.key} with a coding agent` : `Who should take ${best.key}?`, value: best.priority === 'P1' ? `Fix ${best.key}` : `Who should take ${best.key}?` },
+            { key: 'B', label: `What else breaks if ${best.route[best.route.length - 1]} goes down?`, value: `What breaks if ${best.route[best.route.length - 1]} goes down?` },
+          ] },
+        ],
+        data: { system: sys, causes, reports },
       };
     },
   },

@@ -10,6 +10,7 @@ export type State = {
   ready: boolean;
   error?: string;
   brain: string;
+  hosted?: boolean;
   profile: { name?: string };
   dots: Dot[];
   conversations: Conversation[];

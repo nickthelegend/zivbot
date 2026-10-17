@@ -67,7 +67,7 @@ export const api = {
   },
   reset() { try { localStorage.removeItem(KEY); } catch { /* */ } userId = null; },
   health: () => req<{ ok: boolean; falkordb: string; brain: string }>('/api/health'),
-  state: () => req<{ dots: Dot[]; conversations: Conversation[]; profile: { name?: string }; pendingDrafts: number; brain: string; presets: { name: string; avatar: string; role: string; color: string }[]; labels: Record<string, { color: string; icon: string }> }>('/api/state'),
+  state: () => req<{ dots: Dot[]; conversations: Conversation[]; profile: { name?: string }; pendingDrafts: number; hosted?: boolean; brain: string; presets: { name: string; avatar: string; role: string; color: string }[]; labels: Record<string, { color: string; icon: string }> }>('/api/state'),
   messages: (conv: string) => req<{ conversation: { uid: string; kind: string; name: string; dots: any[] }; messages: Message[] }>(`/api/conversations/${conv}/messages`),
   send: (conv: string, text: string) => req(`/api/conversations/${conv}/messages`, { text }),
   connectors: () => req<Connector[]>('/api/connectors'),
@@ -80,8 +80,8 @@ export const api = {
   run: (id: string) => req<Run>(`/api/runs/${id}`),
   skills: () => req<{ nodes: GraphNode[]; edges: (GraphEdge & { score: number; wins: number; losses: number })[] }>('/api/fleet/skills'),
   fleet: () => req<{ agents: any[]; routing: any[] }>('/api/fleet'),
-  graph: (q: { focus?: string[]; ids?: string[]; labels?: string[]; limit?: number; rel?: string } = {}) =>
-    req<{ nodes: GraphNode[]; edges: GraphEdge[] }>(`/api/graph?${new URLSearchParams({ ...(q.focus ? { focus: q.focus.join(',') } : {}), ...(q.ids ? { ids: q.ids.join(',') } : {}), ...(q.labels?.length ? { labels: q.labels.join(',') } : {}), ...(q.limit ? { limit: String(q.limit) } : {}), ...(q.rel ? { rel: q.rel } : {}) })}`),
+  graph: (q: { focus?: string[]; ids?: string[]; labels?: string[]; limit?: number; rel?: string; compact?: boolean } = {}) =>
+    req<{ nodes: GraphNode[]; edges: GraphEdge[] }>(`/api/graph?${new URLSearchParams({ ...(q.focus ? { focus: q.focus.join(',') } : {}), ...(q.ids ? { ids: q.ids.join(',') } : {}), ...(q.labels?.length ? { labels: q.labels.join(',') } : {}), ...(q.limit ? { limit: String(q.limit) } : {}), ...(q.rel ? { rel: q.rel } : {}), ...(q.compact ? { compact: '1' } : {}) })}`),
   answer: (id: string) => req<{ question: string; mode: string; tools: string[]; dot: string; delegatedTo: string[]; queries: { label: string; cypher: string; params: any; ms: number; rows: number; internal?: boolean; dot?: string; error?: string }[]; nodes: GraphNode[]; edges: GraphEdge[]; at: number }>(`/api/answers/${id}`),
   entity: (uid: string) => req<{ text: string; node: any; neighbours: any[] }>(`/api/entity/${encodeURIComponent(uid)}`),
   stats: () => req<{ graph: string; labels: { label: string; n: number }[]; rels: { type: string; n: number }[]; nodes: number; edges: number; graphs: number }>('/api/stats'),

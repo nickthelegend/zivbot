@@ -17,7 +17,7 @@ import { tools } from './tools.ts';
 import { allUsers } from './users.ts';
 import { listDots } from './memory.ts';
 
-const EXPOSED = ['search_graph', 'describe_entity', 'triage', 'who_knows', 'blast_radius', 'connection_path', 'decision_trace', 'customer_history', 'key_people', 'agenda', 'list_agents', 'recall', 'remember', 'run_cypher', 'run_algorithm', 'semantic_search', 'insights', 'decision_impact', 'what_if_absent', 'critical_path', 'customer_health', 'propose_fix', 'draft_email'];
+const EXPOSED = ['search_graph', 'describe_entity', 'triage', 'who_knows', 'blast_radius', 'connection_path', 'decision_trace', 'customer_history', 'key_people', 'agenda', 'list_agents', 'recall', 'remember', 'run_cypher', 'run_algorithm', 'semantic_search', 'insights', 'decision_impact', 'what_if_absent', 'critical_path', 'customer_health', 'diagnose', 'rank_entities', 'propose_fix', 'draft_email'];
 
 /** JSON-schema property → zod (enough for our tool params). */
 function zodFor(p: any): z.ZodTypeAny {

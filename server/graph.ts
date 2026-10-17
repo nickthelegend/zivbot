@@ -60,7 +60,8 @@ export class UserGraph {
     const trace = currentTrace();
     const t0 = performance.now();
     try {
-      const res = readOnly ? await this.g.roQuery(cypher, { params: params as any }) : await this.g.query(cypher, { params: params as any });
+      // read-only queries are the ones people and agents write: cap them so one can't stall a shared server
+      const res = readOnly ? await this.g.roQuery(cypher, { params: params as any, TIMEOUT: 5000 }) : await this.g.query(cypher, { params: params as any });
       const internal = label.startsWith('~');
       const touched = trace && !internal ? trace.touched : undefined;
       const rows = ((res as any).data || []).map((r: Row) => plain(r, touched));

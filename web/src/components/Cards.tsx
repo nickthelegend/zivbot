@@ -54,15 +54,14 @@ function ConnectorsCard() {
   const live = connectors.filter((c) => c.status === 'connected' && c.mode === 'live' && !c.id.startsWith('agent-') && c.auth === 'key');
   const syncing = demo?.status === 'syncing';
   const connected = demo?.status === 'connected';
-  const accounts = (connected ? 1 : 0) + live.length;
   const name = dots[0]?.name || 'Ziv';
   return (
     <div className="connector-wrap">
       <div className="connector-card">
-        <AppIcon slug="gmail" size={44} />
+        <img className="demo-ws-icon" src="/brand/icon-64.png" alt="" width={44} height={44} />
         <div className="grow">
-          <div className="row-title">Gmail <Verified /></div>
-          <div className="row-sub">{connected ? `Connected · ${accounts} Account${accounts > 1 ? 's' : ''}` : syncing ? progress.demo || 'Connecting…' : 'Lumen Labs demo · with Calendar, Slack, Notion, Linear'}</div>
+          <div className="row-title">Lumen Labs demo workspace <Verified /></div>
+          <div className="row-sub">{connected ? `Connected · synthetic company${live.length ? ` + ${live.length} live app${live.length > 1 ? 's' : ''}` : ''}` : syncing ? progress.demo || 'Connecting…' : 'A synthetic company: mail, calendar, Slack, Notion, Linear and a git repo'}</div>
         </div>
         {connected ? (
           <>
@@ -143,6 +142,7 @@ const AGENT_SLUG: Record<string, string> = { codex: 'openai', 'claude-code': 'cl
 
 function DraftCard({ draft }: { draft: Draft }) {
   const live = useStore((s) => s.draftStatus[draft.uid]);
+  const hosted = useStore((s) => !!s.hosted);
   const status = live?.status || draft.status;
   const [body, setBody] = useState(draft.body || '');
   const [editing, setEditing] = useState(false);
@@ -189,10 +189,18 @@ function DraftCard({ draft }: { draft: Draft }) {
           {showPrompt && <pre className="draft-args">{draft.body}</pre>}
         </div>
       )}
+      {draft.kind === 'run' && hosted && !done && (
+        <div className="hosted-note">
+          <b>Coding agents run in the desktop app,</b> on your own Codex / Claude Code / OpenCode subscriptions and your own repo. The web demo shows how the graph picks the agent; here is a real run from the desktop app:
+          <a href="/demo/forge-run.jpg" target="_blank" rel="noreferrer"><img src="/demo/forge-run.jpg" alt="Forge running Codex: tests go from 1/3 to 3/3" /></a>
+        </div>
+      )}
       {live?.result && <div className="draft-result"><Icon.check size={14} /> {live.result}</div>}
       {!done && (
         <div className="draft-actions">
-          <button className="btn primary" disabled={busy} onClick={approve}>{busy ? 'Working…' : draft.kind === 'email' ? 'Approve & send' : draft.kind === 'run' ? `Approve & run ${draft.choices?.find((c) => c.kind === agent)?.name || ''}` : 'Approve'}</button>
+          {draft.kind === 'run' && hosted
+            ? <button className="btn primary" disabled>Runs in the desktop app</button>
+            : <button className="btn primary" disabled={busy} onClick={approve}>{busy ? 'Working…' : draft.kind === 'email' ? 'Approve & send' : draft.kind === 'run' ? `Approve & run ${draft.choices?.find((c) => c.kind === agent)?.name || ''}` : 'Approve'}</button>}
           {draft.kind === 'email' && <button className="btn ghost" onClick={() => setEditing(!editing)}>{editing ? 'Preview' : 'Edit'}</button>}
           <button className="btn ghost" onClick={() => void api.reject(draft.uid).then(() => set((s) => ({ draftStatus: { ...s.draftStatus, [draft.uid]: { status: 'rejected' } } })))}>Discard</button>
         </div>
@@ -229,7 +237,7 @@ export function RunCard({ uid }: { uid: string }) {
 function GraphCard({ card }: { card: Extract<Card, { type: 'graph' }> }) {
   const [g, setG] = useState<{ nodes: GraphNode[]; edges: GraphEdge[] } | null>(null);
   const key = (card.focus || []).join(',');
-  useEffect(() => { if (card.focus?.length) void api.graph(card.exact ? { ids: card.focus } : { focus: card.focus }).then(setG).catch(() => {}); }, [key]);
+  useEffect(() => { if (card.focus?.length) void api.graph(card.exact ? { ids: card.focus } : { focus: card.focus, compact: true }).then(setG).catch(() => {}); }, [key]);
   if (!g || !g.nodes.length) return null;
   return (
     <div className="graph-card">

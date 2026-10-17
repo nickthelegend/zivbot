@@ -113,7 +113,7 @@ small { color: var(--muted); }
 
 /* ---------------------------------------------------------------- chat */
 .chat { display: flex; flex-direction: column; height: 100%; min-height: 0; }
-.chat-top { position: absolute; top: 14px; left: 0; right: 0; display: flex; justify-content: center; pointer-events: none; z-index: 4; }
+.chat-top { position: absolute; top: 0; left: 0; right: 12px; padding: 14px 0 18px; display: flex; justify-content: center; pointer-events: none; z-index: 4; background: linear-gradient(var(--bg) 50%, transparent); }
 .conv-pill { pointer-events: auto; display: inline-flex; align-items: center; gap: 8px; padding: 6px 14px 6px 8px; border-radius: 22px; background: color-mix(in srgb, var(--panel) 88%, transparent); border: 1px solid var(--line); backdrop-filter: blur(10px); font-weight: 500; }
 .messages { flex: 1; overflow-y: auto; padding: 64px 24px 24px; }
 .messages-inner { max-width: 600px; margin: 0 auto; display: flex; flex-direction: column; gap: 8px; }
@@ -442,7 +442,7 @@ textarea.draft-body { resize: vertical; outline: none; }
   .app.m-list .main, .app.m-list .profile { display: none; }
   .mobile-back { display: inline-grid !important; position: absolute; left: 12px; }
   .mobile-home { display: inline-grid !important; }
-  .chat-top { top: 10px; }
+  .chat-top { padding-top: 10px; }
   .top-tools { top: 10px; right: 10px; }
   .app.with-right .profile { width: 100%; }
   .graph-view { padding-top: 56px; }
@@ -452,6 +452,12 @@ textarea.draft-body { resize: vertical; outline: none; }
   .activity-view { grid-template-columns: 1fr; padding: 60px 16px 16px; }
   .mascot { display: none; }
   .graph-toolbar { padding-right: 0; padding-top: 40px; }
+  /* the explorer stacks on phones: a fixed-height canvas, then the details/console below it */
+  .graph-view { overflow-y: auto; }
+  .graph-main { display: flex; flex-direction: column; flex: none; }
+  .graph-canvas { height: 56vh; flex: none; }
+  .graph-side { flex: none; overflow: visible; }
+  .cypher-console textarea { width: 100%; }
 }
 
 /* ---------------------------------------------------------------- desktop + pairing */
@@ -760,3 +766,9 @@ kbd { font: 500 11px Inter, sans-serif; color: var(--muted); background: var(--c
 .skill-graph { border: 1px solid var(--line); border-radius: 16px; overflow: hidden; background: var(--panel); }
 .skill-row { display: flex; gap: 6px; align-items: center; font-size: 12.5px; padding: 3px 4px; }
 .skill-row code { color: var(--accent-2); font-size: 11.5px; }
+
+/* hosted web demo: where coding agents actually run */
+.hosted-note { margin-top: 10px; padding: 10px 12px; border-radius: 12px; background: color-mix(in srgb, var(--accent) 10%, transparent); border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--line)); font-size: 13px; line-height: 1.5; color: var(--text-2); }
+.hosted-note b { color: var(--text); }
+.hosted-note img { display: block; width: 100%; margin-top: 8px; border-radius: 8px; border: 1px solid var(--line); }
+.demo-ws-icon { border-radius: 22%; flex: none; }

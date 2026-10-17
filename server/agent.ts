@@ -209,7 +209,10 @@ Now: ${new Date().toString()}`;
 
 // ------------------------------------------------------------------ onboarding (GrokBot-style)
 
-const ABOUT_ME = `A little about me:\n- I keep working while you're away, on my own computer.\n- I connect to your apps — mail, calendar, Slack, Notion, Linear, GitHub — and to your AI subscriptions like Codex, Claude Code, Cursor and OpenCode.\n- I keep everything in a graph, so I can show you exactly how I got to each answer, and act on it.`;
+const ABOUT_ME = () => `A little about me:
+- I keep everything in a **FalkorDB graph** — your own graph, separate from everyone else's. People, customers, systems, tickets, decisions and my memory are nodes and edges, so I answer by following how they connect.
+- I connect to your apps (mail, calendar, Slack, Notion, Linear, GitHub) and to your AI subscriptions (Codex, Claude Code, Cursor, OpenCode).
+- Under every answer, **Show path** has the exact Cypher I ran. I only act after you approve.${config.hosted ? '\n- This is the web demo: it runs on a synthetic company, and coding agents run in the desktop app on your own machine.' : ''}`;
 
 export async function startOnboarding(userId: string, dot: DotInfo) {
   const g = await userGraph(userId);
@@ -240,7 +243,7 @@ async function onboarding(userId: string, g: UserGraph, dot: DotInfo, text: stri
     publish(userId, { type: 'dots' });
     await say(`${pretty} it is! Nice to meet you.`, [{ type: 'customize' }]);
     await postMessage(userId, g, { conv: dot.conv!, role: 'system', text: `Renamed to ${pretty}` });
-    await say(ABOUT_ME);
+    await say(ABOUT_ME());
     return say("Connect your workspace and I'll find something I can take care of right away. Nothing gets sent without your approval. Or tell me what you need help with.", [{ type: 'connectors' }]);
   }
   // still waiting for a connection: answer anyway if we can, else nudge

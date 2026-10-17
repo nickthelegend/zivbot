@@ -143,15 +143,11 @@ async function busFactor(g: UserGraph): Promise<InsightSection> {
   return { key: 'bus', title: 'Knowledge risk', blurb: 'Bus factor of 1 on systems that matter', items };
 }
 
-/** Systems everything routes through: betweenness on DEPENDS_ON + how much depends on them. */
+/** Systems everything leans on: multi-hop dependents, the customers riding on them, and dependency PageRank. */
 async function singlePoints(g: UserGraph): Promise<InsightSection> {
-  const between = await g.q(
-    `CALL algo.betweenness({nodeLabels: ['System'], relationshipTypes: ['DEPENDS_ON']}) YIELD node, score
-     RETURN node.uid AS uid, score`,
-    {},
-    'betweenness over DEPENDS_ON',
-  ).catch(() => []);
-  const bw = new Map(between.map((b) => [b.uid, b.score]));
+  // PageRank over DEPENDS_ON (set by enrich): what the dependency graph leans on, as a rank
+  const crit = await g.q(`MATCH (s:System) WHERE s.criticality IS NOT NULL RETURN s.uid AS uid ORDER BY s.criticality DESC`, {}, 'dependency PageRank order');
+  const place = new Map(crit.map((c, i) => [c.uid, i + 1]));
   const rows = await g.q(
     `MATCH (s:System)
      OPTIONAL MATCH (d:System)-[:DEPENDS_ON*1..5]->(s)
@@ -170,7 +166,7 @@ async function singlePoints(g: UserGraph): Promise<InsightSection> {
     .filter((r) => r.dependents >= 2)
     .map((r): InsightItem => ({
       title: `${r.name} holds up ${r.dependents} system${r.dependents > 1 ? 's' : ''}`,
-      detail: `${r.customers.length ? `${r.customers.join(', ')} ride on it ($${Math.round(r.arr / 1000)}k ARR). ` : ''}Betweenness ${(bw.get(r.uid) || 0).toFixed(1)} on the dependency graph.`,
+      detail: `${r.customers.length ? `${r.customers.join(', ')} ride on it ($${Math.round(r.arr / 1000)}k ARR). ` : ''}#${place.get(r.uid) ?? '?'} of ${crit.length} by dependency PageRank.`,
       uids: [r.uid, ...r.depUids, ...r.customerUids],
       severity: r.arr > 150000 || r.dependents >= 4 ? 'high' : 'medium',
       ask: `What breaks if ${r.name} goes down?`,
@@ -258,7 +254,10 @@ async function whatChanged(g: UserGraph, since: number): Promise<InsightSection>
     'decisions, runs and approvals since',
   );
   const a = acted[0] || { decided: [], runs: [], wins: 0, approved: 0 };
-  const items: InsightItem[] = rows.map((r) => ({ title: `+${r.n} ${r.label}${r.n > 1 ? (r.label.endsWith('s') ? 'es' : 's') : ''}`, detail: 'Added in the last 24 hours', uids: r.sample, severity: 'low' }));
+  const plural = (l: string, n: number) => (n === 1 ? l : l === 'Person' ? 'People' : l.endsWith('s') ? `${l}es` : `${l}s`);
+  const items: InsightItem[] = rows.slice(0, 5).map((r) => ({ title: `+${r.n} ${plural(r.label, r.n)}`, detail: 'Added in the last 24 hours', uids: r.sample, severity: 'low' }));
+  const rest = rows.slice(5);
+  if (rest.length) items.push({ title: `+${rest.reduce((n, r) => n + r.n, 0)} more`, detail: rest.map((r) => `${r.n} ${plural(r.label, r.n)}`).join(', '), uids: [], severity: 'low' });
   if (a.runs.length) items.unshift({ title: `${a.wins}/${a.runs.length} agent runs succeeded`, detail: `${a.approved} approval${a.approved === 1 ? '' : 's'} and ${a.decided.length} decision${a.decided.length === 1 ? '' : 's'} since yesterday.`, uids: [...a.runs, ...a.decided], severity: 'low' });
   return { key: 'changed', title: 'Last 24 hours', blurb: 'What changed in your graph', items };
 }
