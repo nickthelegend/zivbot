@@ -56,7 +56,7 @@ function plain(v: any, touched?: Set<string>): any {
 export class UserGraph {
   constructor(readonly name: string, private g: Graph) {}
 
-  async q(cypher: string, params: Record<string, unknown> = {}, label = 'query', readOnly = false): Promise<Row[]> {
+  async q(cypher: string, params: Record<string, unknown> = {}, label = '~query', readOnly = false): Promise<Row[]> {
     const trace = currentTrace();
     const t0 = performance.now();
     try {
@@ -77,11 +77,11 @@ export class UserGraph {
     }
   }
 
-  ro(cypher: string, params: Record<string, unknown> = {}, label = 'query') {
+  ro(cypher: string, params: Record<string, unknown> = {}, label = '~query') {
     return this.q(cypher, params, label, true);
   }
 
-  async one(cypher: string, params: Record<string, unknown> = {}, label = 'query') {
+  async one(cypher: string, params: Record<string, unknown> = {}, label = '~query') {
     return (await this.q(cypher, params, label))[0];
   }
 

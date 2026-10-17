@@ -136,7 +136,7 @@ export async function routeJob(g: UserGraph, systems: string[]): Promise<RouteCh
   }).sort((a, b) => b.score - a.score);
 }
 
-export type RunDone = { uid: string; goal: string; status: string; agent: string; kind: AgentKind; tests: string; diff: string; branch: string; dot?: string; tickets: string[]; log: string };
+export type RunDone = { uid: string; goal: string; status: string; agent: string; kind: AgentKind; tests: string; diff: string; branch: string; dot?: string; tickets: string[]; log: string; summary: string };
 export const runHooks: ((userId: string, g: UserGraph, r: RunDone) => Promise<void> | void)[] = [];
 
 export type RunRequest = { goal: string; prompt: string; dir: string; repo?: string; systems: string[]; tickets: string[]; kind: AgentKind; dot?: string; answer?: string; parentRun?: string };
@@ -182,7 +182,7 @@ export async function dispatchRun(userId: string, g: UserGraph, req: RunRequest)
     try {
       const { stdout, stderr } = await exec('npm', ['test', '--silent'], { cwd: req.dir, timeout: 120_000 }).catch((e) => e);
       const out = `${stdout || ''}${stderr || ''}`;
-      const pass = Number(out.match(/# pass (\d+)/)?.[1] || 0), fail = Number(out.match(/# fail (\d+)/)?.[1] || 0);
+      const pass = Number(out.match(/(?:#|ℹ)\s*pass (\d+)/)?.[1] || 0), fail = Number(out.match(/(?:#|ℹ)\s*fail (\d+)/)?.[1] || 0);
       tests = { ok: fail === 0 && pass > 0, summary: `${pass} passed, ${fail} failed` };
       push(`\n$ npm test\n${tests.summary}\n`);
     } catch { /* no test script */ }
@@ -197,9 +197,11 @@ export async function dispatchRun(userId: string, g: UserGraph, req: RunRequest)
     const quota = code !== 0 && QUOTA.test(log);
     const status = quota ? 'quota' : code === 0 && (tests.ok || tests.summary === 'not run') ? 'succeeded' : 'failed';
     const endedAt = Date.now();
+    // the agent's own two-line wrap-up ("Root cause: … / Fix: …"), if it wrote one
+    const summary = (log.match(/(Root cause[\s\S]{0,600})/i)?.[1] || '').split('\n').filter((l) => l.trim() && !l.startsWith('$')).slice(0, 3).join('\n');
     await g.q(
-      `MATCH (r:Run {uid:$uid}) SET r.status=$status, r.endedAt=$endedAt, r.exitCode=$code, r.tests=$tests, r.diff=$diff, r.branch=$branch, r.log=$log`,
-      { uid: runUid, status, endedAt, code, tests: tests.summary, diff: diff.trim(), branch, log: log.slice(-6000) },
+      `MATCH (r:Run {uid:$uid}) SET r.status=$status, r.endedAt=$endedAt, r.exitCode=$code, r.tests=$tests, r.diff=$diff, r.branch=$branch, r.log=$log, r.summary=$summary`,
+      { uid: runUid, status, endedAt, code, tests: tests.summary, diff: diff.trim(), branch, log: log.slice(-6000), summary },
       'record run result',
     );
     if (req.repo && changed.length) await link(g, 'Run', 'CHANGED', 'File', changed.map((f) => ({ from: runUid, to: `file:${req.repo!.slice(5)}/${f}` })));
@@ -208,7 +210,7 @@ export async function dispatchRun(userId: string, g: UserGraph, req: RunRequest)
       await g.q(`UNWIND $t AS k MATCH (t:Ticket {uid:k}) SET t.status = 'fix ready', t.fixBranch = $branch`, { t: req.tickets, branch }, 'mark tickets fix-ready');
     }
     publish(userId, { type: 'run', run: { uid: runUid, goal: req.goal, status, agent: spec.name, kind: req.kind, startedAt, endedAt, tests: tests.summary, diff: diff.trim(), branch } });
-    if (status !== 'quota') for (const h of runHooks) await Promise.resolve(h(userId, g, { uid: runUid, goal: req.goal, status, agent: spec.name, kind: req.kind, tests: tests.summary, diff: diff.trim(), branch, dot: req.dot, tickets: req.tickets, log })).catch((e) => console.error('[run hook]', e));
+    if (status !== 'quota') for (const h of runHooks) await Promise.resolve(h(userId, g, { uid: runUid, goal: req.goal, status, agent: spec.name, kind: req.kind, tests: tests.summary, diff: diff.trim(), branch, dot: req.dot, tickets: req.tickets, log, summary })).catch((e) => console.error('[run hook]', e));
 
     if (quota) {
       await g.q(`MATCH (a:Agent {uid:$a}) SET a.limitedUntil = $until`, { a: `agent:${req.kind}`, until: Date.now() + 3_600_000 }, 'mark agent out of quota');

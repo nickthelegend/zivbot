@@ -32,9 +32,9 @@ export function startProactive() {
     await postMessage(userId, g, {
       conv: dot.conv, role: 'assistant', dot: r.dot,
       text: ok
-        ? `**${r.agent}** finished **${r.goal}**. Tests: ${r.tests}. ${files.length ? `Changed ${files.join(', ')}` : 'No files changed'} on branch \`${r.branch}\`.\n\nI marked the ticket${r.tickets.length > 1 ? 's' : ''} fix-ready in the graph.${followUp ? ` ${followUp.name} is waiting on this — want me to draft the update?` : ''}`
+        ? `**${r.agent}** finished **${r.goal}**. Tests: ${r.tests}. ${files.length ? `Changed ${files.join(', ')}` : 'No files changed'} on branch \`${r.branch}\`.${r.summary ? `\n\n${r.summary}` : ''}\n\nI marked the ticket${r.tickets.length > 1 ? 's' : ''} fix-ready in the graph.${followUp ? ` ${followUp.name} is waiting on this — want me to draft the update?` : ''}`
         : `**${r.agent}** couldn't finish **${r.goal}** (tests: ${r.tests}). Last output:\n\n\`\`\`\n${clip(r.log.trim().split('\n').slice(-8).join('\n'), 700)}\n\`\`\`\nWant me to try another agent?`,
-      cards: [{ type: 'run', runUid: r.uid }, ...(followUp ? [{ type: 'options' as const, options: [{ key: 'A', label: `Draft the update to ${followUp.name.split(' ')[0]}`, value: `Draft a reply to ${followUp.name}` }] }] : [])],
+      cards: [{ type: 'run', runUid: r.uid }, ...(!ok ? [{ type: 'options' as const, options: [{ key: 'A', label: 'Try OpenCode instead', value: `${r.goal.replace(/ in .*$/, '')} with OpenCode` }, { key: 'B', label: 'Try Grok instead', value: `${r.goal.replace(/ in .*$/, '')} with Grok` }] }] : []), ...(followUp ? [{ type: 'options' as const, options: [{ key: 'A', label: `Draft the update to ${followUp.name.split(' ')[0]}`, value: `Draft a reply to ${followUp.name}` }] }] : [])],
     });
   });
 }

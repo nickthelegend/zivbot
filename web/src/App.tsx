@@ -47,7 +47,7 @@ export function App() {
         {view === 'activity' && <ActivityView />}
       </main>
       {rightOpen && view === 'chat' && <ProfilePanel />}
-      <Mascot />
+      {view !== 'graph' && <Mascot />}
       <TraceDrawer />
       <EntityDrawer />
       <ExchangeViewer />

@@ -100,7 +100,8 @@ export async function plan(ctx: Ctx, input: string, opts: PlanOpts = {}): Promis
     if (targets.length) {
       const eng = specialist(/engineer/i);
       if (eng) return delegateTo(eng.name, t, `This is engineering work, so I passed it to **${eng.name}**.`);
-      const r = await call('propose_fix', { tickets: targets });
+      const agent = low.match(/\b(codex|claude(?:[- ]code)?|cursor|opencode|grok|antigravity)\b/)?.[1]?.replace(/^claude.*/, 'claude-code');
+      const r = await call('propose_fix', { tickets: targets, agent });
       return done(r.text);
     }
   }

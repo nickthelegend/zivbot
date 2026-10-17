@@ -106,6 +106,9 @@ function DraftCard({ draft }: { draft: Draft }) {
   const [busy, setBusy] = useState(false);
   const [showPrompt, setShowPrompt] = useState(false);
   const done = status !== 'pending';
+  // once approved, show the agent that actually ran (the result says "Started <kind> …")
+  const ranKind = live?.result?.match(/^Started (\S+)/)?.[1];
+  useEffect(() => { if (ranKind) setAgent(ranKind); }, [ranKind]);
   const approve = async () => {
     setBusy(true);
     try {

@@ -233,6 +233,7 @@ export const tools: Tool[] = [
         ['tickets', 2, `MATCH (x {uid:$u})<-[:AFFECTS|PART_OF|FOR]-(t:Ticket)-[:ASSIGNED_TO]->(p:Person) RETURN p.uid AS uid, p.name AS name, count(t) AS n`],
         ['projects', 1, `MATCH (x {uid:$u}) MATCH (p:Person)-[:WORKS_ON|OWNS]->(pr:Project) WHERE pr = x OR (pr)-[:USES]->(x) RETURN p.uid AS uid, p.name AS name, count(pr) AS n`],
         ['chat', 1, `MATCH (x {uid:$u})<-[:MENTIONS]-(m:ChatMessage)<-[:POSTED]-(p:Person) RETURN p.uid AS uid, p.name AS name, count(m) AS n`],
+        ['GitHub contributions', 1, `MATCH (x {uid:$u}) MATCH (p:Person)-[c:CONTRIBUTES_TO]->(r:Repo) WHERE r = x OR (r)-[:IMPLEMENTS]->(x) RETURN p.uid AS uid, p.name AS name, toInteger(c.commits / 25) + 1 AS n`],
         ['runs', 1, `MATCH (x {uid:$u})<-[:WORKED_ON]-(r:Run {status:'succeeded'})-[:EXECUTED_BY]->(a:Agent) RETURN a.uid AS uid, a.name AS name, count(r) AS n`],
       ];
       const score = new Map<string, { name: string; score: number; why: string[] }>();
@@ -472,8 +473,8 @@ export const tools: Tool[] = [
   {
     name: 'propose_fix',
     description: 'Turn tickets into a coding job: gather graph context (affected systems, implementing repo, related chat/mail diagnosis, sibling tickets), pick the best agent from my subscriptions with the graph router, and create an approval card. Nothing runs until I approve.',
-    params: { type: 'object', properties: { tickets: { type: 'array', items: { type: 'string' }, description: 'ticket keys/uids, or a customer/system name to fix its open tickets' } }, required: ['tickets'] },
-    async run({ g, dot }, { tickets }) {
+    params: { type: 'object', properties: { tickets: { type: 'array', items: { type: 'string' }, description: 'ticket keys/uids, or a customer/system name to fix its open tickets' }, agent: { type: 'string', description: 'optional agent kind the user asked for: codex, claude-code, cursor, opencode, grok, antigravity' } }, required: ['tickets'] },
+    async run({ g, dot }, { tickets, agent }) {
       const uids: string[] = [];
       for (const t of tickets as string[]) {
         const n = await resolve(g, t, ['Ticket', 'Org', 'System']);
@@ -507,7 +508,7 @@ export const tools: Tool[] = [
       );
       const files = await g.q(`MATCH (f:File)-[:IN_REPO]->(:Repo {uid:$r}) OPTIONAL MATCH (f)<-[:TOUCHES]-(c:Commit)-[:AUTHORED_BY]->(p:Person) RETURN f.path AS path, collect(DISTINCT p.name) AS authors`, { r: repo.uid }, 'repo files + authors');
       const choices = await routeJob(g, systems);
-      const best = choices.find((c) => c.installed) || choices[0];
+      const best = choices.find((c) => c.installed && agent && c.kind === agent) || choices.find((c) => c.installed) || choices[0];
       const prompt = [
         `You are fixing ${ctx.map((c) => c.key).join(' and ')} in this repository (${repo.name}, which implements ${ctx[0].systemNames.join(', ')}).`,
         ...ctx.map((c) => `- ${c.key}: ${c.title}. ${c.body}`),
