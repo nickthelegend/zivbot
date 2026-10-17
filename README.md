@@ -6,7 +6,7 @@
 
 > 🏁 **Graph Hacks: Context for AI Agents** (WeMakeDevs × FalkorDB)
 > **Track:** Agents That Act on Connected Data (primary). It also covers Agent Memory and Coordination: per-user graphs, episodic/semantic/procedural memory, and dot-to-dot handoffs.
-> **Demo video:** _link_ · **Live:** _link_ · **Built in:** Oct 15–18, 2026
+> **Demo video:** _link_ · **Live:** [zivbot.vercel.app](https://zivbot.vercel.app) · **Built in:** Oct 15–18, 2026
 
 <p align="center"><img src="docs/screenshots/chat.png" width="880" alt="Ziv triaging from the graph"></p>
 
@@ -366,12 +366,23 @@ Then open **http://localhost:5173**. The API runs on 8787, and the FalkorDB Brow
 docker compose up -d --build
 ```
 
+### Hosted deploy (what runs at zivbot.vercel.app)
+
+| Piece | Where | How |
+|---|---|---|
+| Web app | Vercel | `vercel.json` builds `npm run build` → `dist`, with `VITE_API_BASE` set to the API URL |
+| API | Railway | this `Dockerfile`, a volume on `/data`, health check `/api/health` |
+| FalkorDB | Railway | FalkorDB's own template, reached over Railway's private network (`FALKORDB_URL=${{FalkorDB.FALKORDB_PRIVATE_URL}}`) |
+
+The API runs with `ZIV_HOSTED=1`. That refuses connectors that read local paths or spawn processes (MCP, local git, docs folder), and it hands coding-agent runs back to the desktop app, since those use your own subscriptions on your own machine. CORS allows the Vercel origin and anything listed in `ZIV_CORS_ORIGINS`. Every visitor gets their own `ziv_<id>` graph, and the demo workspace is synthetic.
+
 Configuration (`.env`):
 
 | Var | What |
 |---|---|
 | `FALKORDB_URL` | `redis://localhost:6379` (FalkorDB Cloud works too, with `FALKORDB_USERNAME`/`PASSWORD`) |
 | `ZIV_LLM_BASE_URL` / `ZIV_LLM_API_KEY` / `ZIV_LLM_MODEL` | any OpenAI-compatible endpoint with tool calling; `OPENROUTER_API_KEY` alone also works (free model by default). `ZIV_LLM=off` forces the graph planner |
+| `ZIV_HOSTED`, `ZIV_CORS_ORIGINS` | public-deploy mode (see above) and extra allowed web origins |
 | `ZIV_CODEX_MODEL`, `ZIV_OPENCODE_MODEL` | model pins for dispatched coding agents |
 | `ZIV_PROACTIVE_MS` | how often dots scan the graph on their own (0 = off) |
 

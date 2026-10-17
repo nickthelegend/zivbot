@@ -1,0 +1,9 @@
+/node_modules
+/dist
+/desktop
+/mobile
+/demo
+/brand
+/docs
+/test
+.env
