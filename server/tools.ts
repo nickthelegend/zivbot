@@ -598,6 +598,36 @@ export const tools: Tool[] = [
   },
 
   {
+    name: 'decision_impact',
+    description: 'Before deciding: what a pending decision touches in the graph — projects blocked on it, customers and ARR on the affected systems, open tickets, and the people involved.',
+    params: { type: 'object', properties: { decision: { type: 'string' } }, required: ['decision'] },
+    async run({ g }, { decision }) {
+      const d = await resolve(g, decision, ['Decision']);
+      if (!d) return { text: `I couldn't find a decision matching "${decision}".` };
+      const r = await g.one(
+        `MATCH (d:Decision {uid:$u})-[:ABOUT]->(x)
+         OPTIONAL MATCH (x)<-[:BLOCKED_BY]-(blocked:Project)
+         OPTIONAL MATCH (x)-[:USES|AFFECTS|PART_OF*1..2]-(s:System)
+         OPTIONAL MATCH (s)<-[:DEPENDS_ON*0..3]-(:System)<-[:USES]-(o:Org {kind:'customer'})
+         OPTIONAL MATCH (t:Ticket {status:'open'})-[:AFFECTS|PART_OF]->(x)
+         OPTIONAL MATCH (x)<-[:WORKS_ON|OWNS]-(p:Person)
+         RETURN collect(DISTINCT x.name) AS about, collect(DISTINCT blocked.name) AS blocked, collect(DISTINCT s.name) AS systems,
+                collect(DISTINCT o) AS customers, collect(DISTINCT t.key) AS tickets, collect(DISTINCT p.name) AS people,
+                collect(DISTINCT x.uid) + collect(DISTINCT s.uid) + collect(DISTINCT o.uid) + collect(DISTINCT p.uid) AS uids`,
+        { u: d.uid },
+        `what "${clip(d.name, 40)}" touches`,
+      );
+      const arr = (r.customers as any[]).reduce((a, o) => a + (o.properties?.arr ?? o.arr ?? 0), 0);
+      const names = (r.customers as any[]).map((o) => o.properties?.name ?? o.name);
+      return {
+        text: `**What this decision touches**\n- About: ${r.about.join(', ') || '—'}\n${r.blocked.length ? `- Unblocks or delays: ${r.blocked.join(', ')}\n` : ''}- Systems: ${r.systems.join(', ') || '—'}\n- Customers exposed: ${names.join(', ') || 'none'}${arr ? ` ($${Math.round(arr / 1000)}k ARR)` : ''}\n- Open tickets: ${r.tickets.join(', ') || 'none'}\n- People to loop in: ${r.people.join(', ') || 'nobody on record'}`,
+        cards: [{ type: 'graph', title: 'Decision stakes', focus: [d.uid, ...r.uids].slice(0, 30) }],
+        data: r,
+      };
+    },
+  },
+
+  {
     name: 'decide',
     description: 'Record my decision on a pending decision, then act on it: find everyone the graph says is affected and draft the follow-ups for approval.',
     params: { type: 'object', properties: { decision: { type: 'string' }, choice: { type: 'string' } }, required: ['decision', 'choice'] },

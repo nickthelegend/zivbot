@@ -126,3 +126,14 @@ test('insights: bus factor, single points of failure and who is waiting come fro
   assert.ok(by('waiting').items.some((i) => i.title.startsWith('Kate Morgan')));
   assert.ok(!by('waiting').items.some((i) => i.title.startsWith('Daniel Ross')), 'a thank-you is not waiting on a reply');
 });
+
+test('planner: "help me decide" shows the stakes but never decides; an explicit choice does', async () => {
+  const { plan } = await import('../server/planner.ts');
+  const ctx = { g, userId: USER, dot };
+  const r = await plan(ctx, 'Help me decide: Drop Helios v1 support or delay the EU launch');
+  assert.ok(r.cards.some((c) => c.type === 'options'));
+  assert.match(r.text, /What this decision touches/);
+  assert.equal((await g.one(`MATCH (d:Decision {uid:'decision:d-helios-v1'}) RETURN d.status AS s`)).s, 'pending');
+  await plan(ctx, 'Confirm Oct 28');
+  assert.equal((await g.one(`MATCH (d:Decision {uid:'decision:d-cutover'}) RETURN d.status AS s, d.choice AS c`)).c, 'Confirm Oct 28');
+});

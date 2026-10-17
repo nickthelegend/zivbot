@@ -6,6 +6,7 @@ import { proactiveTriage } from './agent.ts';
 import { runHooks } from './fleet.ts';
 import { toolByName } from './tools.ts';
 import { clip } from './util.ts';
+import { insights } from './insights.ts';
 
 /**
  * "I keep working while you're away." On a timer, each user's chief dot
@@ -51,7 +52,9 @@ export async function scanUser(userId: string, force = false) {
   if (!chief) return;
   const r = await toolByName('triage')!.run({ g, userId, dot: chief.uid }, {});
   const data = r.data as any;
-  const fp = [...data.incidents.map((i: any) => i.uid), ...data.threads.slice(0, 3).map((t: any) => t.uid), ...data.decisions.map((d: any) => d.uid)].join('|');
+  // speak up when the work changed OR a new high-severity risk appeared in the graph
+  const risks = (await insights(g)).flatMap((s) => s.items.filter((i) => i.severity === 'high').map((i) => `${s.key}:${i.title}`)).sort();
+  const fp = [...data.incidents.map((i: any) => i.uid), ...data.threads.slice(0, 3).map((t: any) => t.uid), ...data.decisions.map((d: any) => d.uid), ...risks].join('|');
   const last = await g.one(`MATCH (n:Notice {uid:'notice:triage'}) RETURN n.fp AS fp`);
   if (!force && last?.fp === fp) return;
   await g.q(`MERGE (n:Notice {uid:'notice:triage'}) SET n.fp = $fp, n.at = $now`, { fp, now: Date.now() }, 'remember what I told you');

@@ -107,12 +107,16 @@ export async function plan(ctx: Ctx, input: string, opts: PlanOpts = {}): Promis
 
   // ---- decisions waiting on me: "confirm Oct 28", "go with the shim"
   const pending = await ctx.g.q(`MATCH (d:Decision {status:'pending'}) RETURN d.uid AS uid, d.text AS text, d.options AS options`, {}, '~pending decisions');
-  for (const d of pending) {
-    for (const o of (d.options as string[]) || []) {
-      const words = o.toLowerCase().split(/\W+/).filter((w) => w.length > 2 && !['the', 'and', 'support'].includes(w));
-      const hit = words.filter((w) => low.includes(w)).length;
-      if ((/^(confirm|go with|let'?s|choose|pick|decide|ok|yes)/i.test(t) || low.includes('decide')) && hit >= Math.min(2, words.length)) {
-        const r = await call('decide', { decision: d.uid, choice: o });
+  // An explicit, unambiguous choice records the decision ("confirm Oct 28", "decide: push to Nov 4").
+  // "Help me decide …" never decides — it lays out the options and the stakes instead.
+  if (!/help me decide|should i|what do you think|options|stakes/.test(low) && /^(confirm|go with|let'?s|choose|pick|decide|ok|yes)\b/i.test(t)) {
+    for (const d of pending) {
+      const scored = ((d.options as string[]) || []).map((o) => {
+        const words = o.toLowerCase().split(/\W+/).filter((w) => w.length > 2 && !['the', 'and', 'support', 'launch'].includes(w));
+        return { o, hit: words.filter((w) => low.includes(w)).length, need: Math.min(2, words.length) };
+      }).sort((a, b) => b.hit - a.hit);
+      if (scored[0] && scored[0].hit >= scored[0].need && scored[0].hit > (scored[1]?.hit ?? 0)) {
+        const r = await call('decide', { decision: d.uid, choice: scored[0].o });
         return done(r.text);
       }
     }
@@ -122,7 +126,8 @@ export async function plan(ctx: Ctx, input: string, opts: PlanOpts = {}): Promis
     if (target) {
       cards.push({ type: 'options', question: target.text, options: (target.options as string[]).map((o, i) => ({ key: String.fromCharCode(65 + i), label: o, value: `Decide: ${o}` })) });
       const tr = await call('decision_trace', { topic: target.uid });
-      return done(`Here's what I know about **${target.text}**:\n${tr.text}\n\nWhich way do you want to go? I'll record it and draft the follow-ups.`);
+      const im = await call('decision_impact', { decision: target.uid });
+      return done(`Here's what I know about **${target.text}**:\n${tr.text}\n\n${im.text}\n\nWhich way do you want to go? I'll record it and draft the follow-ups.`);
     }
   }
 
