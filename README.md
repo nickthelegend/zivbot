@@ -113,7 +113,7 @@ Take FalkorDB away and nothing works.
 - **Everything is a node, chat included.** Messages are `:Episode` nodes chained by `NEXT`. Answers are `:Answer` nodes that `USED` the nodes they touched. Drafts, runs, rules and memories are nodes too. Take FalkorDB out and nothing is left: no answers, no memory, no provenance.
 - **Derived edges are kept apart from facts.** `COLLABORATES` is computed from shared mail, meetings, projects, channels and files. The user's own ties go on `IN_TOUCH`, because "me" mails everyone and would otherwise top PageRank. Working groups come from label propagation over strong ties only (`CLOSE_TO`, weight ≥ 2), so a single all-hands meeting doesn't merge every team into one.
 - **Agents read through tools, never raw writes.** Agent-written Cypher runs with `GRAPH.RO_QUERY` and a 5 s timeout. Every action (email, invite, reassign, merge, coding run) becomes a `:Draft` that waits for approval.
-- **The planner is deterministic by default.** The hosted demo uses the graph planner, an intent router over the same tools, so it can't run out of LLM quota during judging. Set an OpenAI-compatible endpoint and the same tools go to a model that picks them itself. The MCP server (`npm run mcp`) hands the same tools to any MCP client.
+- **A hybrid brain.** The graph planner (an intent router over the graph tools) answers what it recognises: fast, free and deterministic. When it isn't sure, a model reads the question and picks from the same tools itself (`ZIV_LLM=auto`). The hosted demo uses a free OpenRouter model with a daily budget. Once that budget is spent, the badge switches to "Graph planner" and the planner answers alone until the next day. The MCP server (`npm run mcp`, or `/mcp` over HTTP) gives the same tools to any MCP client, so the agent chooses the tools there too.
 - **Semantic memory is local by default.** It uses feature hashing plus a small concept layer, so the demo needs no API key. Set `ZIV_EMBED_*` to use real embeddings in the same FalkorDB vector index. Matches past a distance threshold are dropped, so it says "I don't know" instead of returning noise.
 
 ## Feasibility: from demo to product
@@ -509,7 +509,7 @@ ZIV_USER=<your id> npm run mcp
 
 Add it to any MCP client. For example, Claude Code: `claude mcp add zivbot -- npx tsx /path/to/zivbot/server/mcp.ts`.
 
-The same 28 tools are also served over **Streamable HTTP**, including on the live demo. Copy your command from **Connect apps → Use your graph from any agent**:
+The same 30 tools are also served over **Streamable HTTP**, including on the live demo. Copy your command from **Connect apps → Use your graph from any agent**:
 
 ```bash
 claude mcp add --transport http zivbot "https://zivbot-api-production.up.railway.app/mcp?user=<your id>"

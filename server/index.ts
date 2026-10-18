@@ -6,6 +6,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join, dirname, resolve, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { config, llmEnabled } from './config.ts';
+import { llmBudgetLeft } from './llm.ts';
 import { falkor, userGraph, listGraphs } from './graph.ts';
 import { subscribe, publish } from './bus.ts';
 import { ensureUser, ensureTeam, isUser } from './users.ts';
@@ -23,7 +24,8 @@ import { insights } from './insights.ts';
 import { runAlgorithm, graphSchema, ALGORITHMS } from './algorithms.ts';
 import { RULE_KINDS, listRules, createRule, setRuleActive, evaluateRules } from './rules.ts';
 
-const brainName = () => (!llmEnabled() ? 'graph-planner' : config.llm.mode === 'llm' ? `llm:${config.llm.model}` : `hybrid:${config.llm.model}`);
+// the badge tells the truth: once the day's model budget is spent, it's the planner alone until tomorrow
+const brainName = () => (!llmEnabled() || llmBudgetLeft() <= 0 ? 'graph-planner' : config.llm.mode === 'llm' ? `llm:${config.llm.model}` : `hybrid:${config.llm.model}`);
 const ROOT = process.env.ZIV_ROOT || resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const app = new Hono();
 
@@ -361,6 +363,7 @@ app.get('/api/memory', async (c) => {
   const g = await userGraph(user(c));
   return c.json(await g.q(
     `MATCH (m) WHERE (m:Fact OR m:Procedure) OPTIONAL MATCH (m)-[:ABOUT|PREFERS]->(x)
+     WITH m, x WHERE coalesce(m.status, 'active') = 'active'
      RETURN m.uid AS uid, [l IN labels(m) WHERE l <> 'Searchable'][0] AS kind, m.text AS text, m.at AS at, m.status AS status, collect(x.name) AS about ORDER BY m.at DESC`,
   ));
 });
@@ -424,5 +427,7 @@ if (existsSync(dist)) {
 await falkor();
 startProactive();
 serve({ fetch: app.fetch, port: config.port, hostname: process.env.HOST || '0.0.0.0' }, (i) => {
-  console.log(`ZivBot on http://localhost:${i.port} · FalkorDB ${config.falkorUrl} · brain: ${llmEnabled() ? config.llm.model : 'graph planner'}`);
+  // never log credentials: the FalkorDB URL can carry a password
+  const db = config.falkorUrl.replace(/\/\/[^@/]*@/, '//***@');
+  console.log(`ZivBot on http://localhost:${i.port} · FalkorDB ${db} · brain: ${brainName()}`);
 });

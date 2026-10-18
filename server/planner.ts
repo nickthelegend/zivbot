@@ -58,12 +58,16 @@ export async function plan(ctx: Ctx, input: string, opts: PlanOpts = {}): Promis
   const ents = await entities(ctx.g, t);
   const first = (...labels: string[]) => ents.find((e) => labels.includes(e.label));
   // what you told me comes first: a question about someone or something I hold a memory on gets it back
-  if (ents.length && !/^(remember|note( that)?|from now on|always|never|i prefer|prefer|keep in mind)\b/i.test(t)) {
-    const mem = await ctx.g.q(
-      `MATCH (m)-[:ABOUT]->(x) WHERE (m:Fact OR m:Procedure) AND m.status = 'active' AND x.uid IN $u RETURN m.text AS text, m.at AS at ORDER BY m.at DESC LIMIT 5`,
-      { u: ents.map((e) => e.uid) },
-      'what you told me about them',
-    );
+  if (!/^(remember|note( that)?|from now on|always|never|i prefer|prefer|keep in mind|forget)\b/i.test(t) && /\?|^(when|what|who|is|are|do|does|how|which|where)\b/.test(low)) {
+    // memories about what the question names, plus any memory that shares its words (facts with no entity)
+    const mem = [
+      ...(ents.length ? await ctx.g.q(
+        `MATCH (m)-[:ABOUT]->(x) WHERE (m:Fact OR m:Procedure) AND m.status = 'active' AND x.uid IN $u RETURN m.text AS text, m.at AS at ORDER BY m.at DESC LIMIT 5`,
+        { u: ents.map((e) => e.uid) },
+        'what you told me about them',
+      ) : []),
+      ...(await ctx.g.q(`MATCH (m) WHERE (m:Fact OR m:Procedure) AND m.status = 'active' RETURN m.text AS text, m.at AS at ORDER BY m.at DESC LIMIT 30`, {}, '~active memories')),
+    ];
     const words = new Set(low.split(/[^\p{L}\p{N}]+/u).filter((w) => w.length > 3).map((w) => w.replace(/(ing|ed|s)$/, '')));
     const hit = mem.filter((m) => String(m.text).toLowerCase().split(/[^\p{L}\p{N}]+/u).some((w) => w.length > 3 && words.has(w.replace(/(ing|ed|s)$/, '')) && !ents.some((e) => e.uid.toLowerCase().includes(w))));
     if (hit.length) { used.push('recall'); remembered = `**You told me** (${ago(hit[0].at)}): “${hit[0].text}”${hit.length > 1 ? ` — and ${hit.length - 1} more note${hit.length > 2 ? 's' : ''} about this.` : ''}`; }
