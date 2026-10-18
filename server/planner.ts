@@ -3,6 +3,8 @@ import { loadDictionary, mentionsIn } from './ingest.ts';
 import { toolByName, search, type Card, type Ctx, type ToolResult } from './tools.ts';
 import { ago, when } from './util.ts';
 import { criticalPath } from './blockers.ts';
+import { config } from './config.ts';
+import { rankOwners } from './absence.ts';
 import { catalog, runConnectorAction } from './connectors/index.ts';
 import { connectorConfig } from './secrets.ts';
 
@@ -48,9 +50,21 @@ export async function plan(ctx: Ctx, input: string, opts: PlanOpts = {}): Promis
     cards.push(...(r.cards || []));
     return r;
   };
-  const done = (text: string): PlanResult => ({ text, cards, tools: used });
+  let remembered = '';
+  const done = (text: string): PlanResult => ({ text: remembered ? `${remembered}\n\n${text}` : text, cards, tools: used });
   const ents = await entities(ctx.g, t);
   const first = (...labels: string[]) => ents.find((e) => labels.includes(e.label));
+  // what you told me comes first: a question about someone or something I hold a memory on gets it back
+  if (ents.length && !/^(remember|note( that)?|from now on|always|never|i prefer|prefer|keep in mind)\b/i.test(t)) {
+    const mem = await ctx.g.q(
+      `MATCH (m)-[:ABOUT]->(x) WHERE (m:Fact OR m:Procedure) AND m.status = 'active' AND x.uid IN $u RETURN m.text AS text, m.at AS at ORDER BY m.at DESC LIMIT 5`,
+      { u: ents.map((e) => e.uid) },
+      'what you told me about them',
+    );
+    const words = new Set(low.split(/[^\p{L}\p{N}]+/u).filter((w) => w.length > 3).map((w) => w.replace(/(ing|ed|s)$/, '')));
+    const hit = mem.filter((m) => String(m.text).toLowerCase().split(/[^\p{L}\p{N}]+/u).some((w) => w.length > 3 && words.has(w.replace(/(ing|ed|s)$/, '')) && !ents.some((e) => e.uid.toLowerCase().includes(w))));
+    if (hit.length) { used.push('recall'); remembered = `**You told me** (${ago(hit[0].at)}): “${hit[0].text}”${hit.length > 1 ? ` — and ${hit.length - 1} more note${hit.length > 2 ? 's' : ''} about this.` : ''}`; }
+  }
   const dots = await ctx.g.q(`MATCH (d:Dot) WHERE d.uid <> $me RETURN d.name AS name, d.role AS role`, { me: ctx.dot }, '~other dots');
   const specialist = (re: RegExp) => (opts.from || opts.inGroup || !opts.delegate || (opts.dot && re.test(opts.dot.role)) ? null : dots.find((d) => re.test(d.role)));
   const delegateTo = async (name: string, goal: string, intro?: string) => {
@@ -111,6 +125,38 @@ export async function plan(ctx: Ctx, input: string, opts: PlanOpts = {}): Promis
   if (/\b(delete|remove|drop|wipe|erase|destroy|truncate)\b.*\b(all|every|tickets?|nodes?|graph|data|database|everything|records?)\b|ignore (all |your |previous |prior )*instructions/.test(low)) {
     return done(`I can't do that. I don't delete or rewrite your graph from chat — I read it, and anything I change goes through a draft you approve (emails, invites, reassignments, merges, coding runs). To remove data, disconnect the app it came from in Connect apps.`);
   }
+  // ---- a board / exec update, written from the graph
+  if (/\b(board|investors?|exec(utive)? (summary|update)|status update|weekly update|update for (the )?(team|leadership))\b/.test(low) && /\b(tell|update|say|summary|report|share|write)\b/.test(low)) {
+    const txt = await boardUpdate(ctx, call);
+    cards.length = 0;
+    return done(txt);
+  }
+
+  // ---- "what did Marcus decide about Stripe?"
+  const decQ = low.match(/\bwhat (?:did|has) (.+?) decide/);
+  if (decQ && first('Person')) {
+    const who = first('Person')!;
+    const rows = await ctx.g.q(
+      `MATCH (d:Decision)-[r:DECIDED_BY|RAISED_BY|APPROVED_BY]->(:Person {uid:$u}) RETURN d.text AS text, coalesce(d.status, 'pending') AS status, type(r) AS how, d.choice AS choice, d.at AS at ORDER BY d.at DESC`,
+      { u: who.uid },
+      'decisions this person made or raised',
+    );
+    const topicEnt = ents.find((e) => e.uid !== who.uid);
+    const words = topicEnt ? (await ctx.g.one(`MATCH (n {uid:$u}) RETURN toLower(n.name) AS n`, { u: topicEnt.uid }))?.n : null;
+    const rel = words ? rows.filter((r) => String(r.text).toLowerCase().includes(String(words).split(' ')[0])) : rows;
+    const name = (await ctx.g.one(`MATCH (p:Person {uid:$u}) RETURN p.name AS n`, { u: who.uid }))?.n;
+    const made = rel.filter((r) => r.how === 'DECIDED_BY' || r.how === 'APPROVED_BY');
+    const raised = rel.filter((r) => r.how === 'RAISED_BY' && r.status === 'pending');
+    return done(made.length
+      ? `${name} decided:\n${made.map((r) => `- **${r.text}**${r.choice ? ` → ${r.choice}` : ''} (${ago(r.at)})`).join('\n')}${raised.length ? `\n\nStill open: ${name.split(' ')[0]} raised “${raised[0].text}” ${ago(raised[0].at)} and is waiting on you.` : ''}`
+      : raised.length ? `**${name} hasn't decided — they're waiting on you.** They raised “${raised[0].text}” ${ago(raised[0].at)}, and it's still pending.` : `I have no decision by ${name}${words ? ` about ${words}` : ''} in the graph.`);
+  }
+
+  // ---- "who is our single point of failure?" asks about people
+  if (/^who\b/.test(low) && /\b(single point|bus factor|irreplaceable|can'?t (we )?lose|most critical person)\b/.test(low)) {
+    return done(`The people the graph can't do without:\n\n${(await call('insights', { focus: 'absence' })).text}`);
+  }
+
   const pending = await ctx.g.q(`MATCH (d:Decision {status:'pending'}) OPTIONAL MATCH (d)-[:ABOUT]->(x) RETURN d.uid AS uid, d.text AS text, d.options AS options, collect(x.uid) AS about`, {}, '~pending decisions');
   // An explicit, unambiguous choice records the decision ("confirm Oct 28", "decide: push to Nov 4").
   // "Help me decide …" never decides — it lays out the options and the stakes instead.
@@ -151,7 +197,12 @@ export async function plan(ctx: Ctx, input: string, opts: PlanOpts = {}): Promis
   // "X or Y first?": rank both on the graph instead of acting on either
   const keysIn = [...t.matchAll(/\b([A-Z]{2,6}-\d+)\b/gi)].map((m) => m[1].toUpperCase());
   if (/\bor\b/.test(low) && /\b(first|priorit\w*|more (important|urgent)|which (one|should)|before)\b/.test(low)) {
-    return done(await whichFirst(ctx, call, t, keysIn, ents));
+    const txt = await whichFirst(ctx, call, t, keysIn, ents);
+    // one answer: keep a single graph card, drop the option lists the sub-tools offered
+    const g1 = cards.find((c) => c.type === 'graph');
+    cards.length = 0;
+    if (g1) cards.push(g1);
+    return done(txt);
   }
   // a question about fixing is not an instruction to fix ("is LUM-139 fixable today?")
   const asking = (/^(is|are|should|which|what|how|why|when|do|does|did|will|was|who)\b/.test(low) || /\bfixable\b/.test(low)) && !/^(can you|could you|would you|please)\b/.test(low);
@@ -236,7 +287,8 @@ export async function plan(ctx: Ctx, input: string, opts: PlanOpts = {}): Promis
   if (/\b(reassign|rebalance|who should (take|own|handle|pick up)|hand .* to someone|move .* to someone)\b/.test(low)) {
     const key = t.match(/\b([A-Z]{2,6}-\d+)\b/i)?.[1]?.toUpperCase();
     const tk = key ? `ticket:${key}` : first('Ticket')?.uid;
-    if (tk) return done((await call('propose_reassign', { ticket: tk })).text);
+    const target = /\bto\s+\w/.test(low) ? first('Person') : undefined;
+    if (tk) return done((await call('propose_reassign', { ticket: tk, draft: !/^(who|which|whom)\b|\?$/.test(low), ...(target ? { to: target.uid } : {}) })).text);
   }
 
   if (/\bwho\b.*\b(knows?|worked|works|owns?|expert|familiar|touched|wrote)\b/.test(low)) {
@@ -320,7 +372,7 @@ export async function plan(ctx: Ctx, input: string, opts: PlanOpts = {}): Promis
     return done(`${focus === 'changed' ? "Here's what happened in your graph" : "Here's what the graph says you should worry about"}:\n\n${(await call('insights', { focus })).text}`);
   }
 
-  if (/(important|key|central|influential) (people|person|contacts)|who matters|brokers?\b/.test(low)) {
+  if (/(important|key|central|influential|(most |best |well[- ])connected) (people|person|contacts|colleagues)|who matters|brokers?\b|most connected/.test(low)) {
     return done((await call('key_people')).text);
   }
 
@@ -339,6 +391,13 @@ export async function plan(ctx: Ctx, input: string, opts: PlanOpts = {}): Promis
 
   // the calendar needs a calendar word; "today" alone ("is LUM-139 fixable today?") isn't one
   if ((/\b(calendar|agenda|meetings?|schedule|my day|my week)\b/.test(low) || /^(what'?s|what is|anything) (on )?(for )?(today|tomorrow)\b/.test(low)) && !keysIn.length && !/\b(reply|email|draft|needs? me|what should|plate|priorit|urgent|attention|triage|important)\b/.test(low)) {
+    const day = /\btomorrow\b/.test(low) ? 1 : /\btoday\b/.test(low) ? 0 : null;
+    if (day !== null) {
+      const start = new Date(); start.setHours(0, 0, 0, 0); start.setDate(start.getDate() + day);
+      const r = await call('agenda', { days: 3 });
+      const rows = ((r.data as any[]) || []).filter((e) => e.start >= start.getTime() && e.start < start.getTime() + 86_400_000);
+      return done(rows.length ? `${day ? 'Tomorrow' : 'Today'}:\n${rows.map((e) => `- ${when(e.start)} — **${e.title}**${e.with?.length ? ` with ${e.with.join(', ')}` : ''}${e.conflict ? ' ⚠️ conflict' : ''}`).join('\n')}` : `Nothing on your calendar ${day ? 'tomorrow' : 'today'}.`);
+    }
     return done(`Here's what's coming up:\n${(await call('agenda', { days: 4 })).text}`);
   }
 
@@ -367,6 +426,64 @@ export async function plan(ctx: Ctx, input: string, opts: PlanOpts = {}): Promis
   if (/(what do you (know|remember)|recall|do you remember)/.test(low)) {
     const r = await call('recall', { query: t.replace(/what do you (know|remember) about|recall|do you remember/gi, '') });
     return done(r.text);
+  }
+
+  // ---- ticket age: "which tickets have been open longer than 2 weeks?"
+  const age = low.match(/\b(?:open|older|longer|more) (?:for |than )?(?:longer than |more than |over )?(\d+|a|one|two|three|four)\s*(day|week|month)s?\b/);
+  if (age && /\b(tickets?|issues?|bugs?|incidents?)\b/.test(low)) {
+    const n = { a: 1, one: 1, two: 2, three: 3, four: 4 }[age[1] as 'a'] ?? Number(age[1]);
+    const days = n * (age[2] === 'week' ? 7 : age[2] === 'month' ? 30 : 1);
+    return done((await call('list_entities', { label: 'Ticket', status: 'open', olderThanDays: days })).text);
+  }
+
+  // ---- "who emails me the most?"
+  if (/\bwho\b.*\b(emails?|mails?|messages?|writes? to|contacts?|pings?)\b.*\b(me|us)\b.*\b(most|a lot|often)\b/.test(low)) {
+    const rows = await ctx.g.q(
+      `MATCH (p:Person)<-[:FROM]-(e:Email)-[:TO]->(:Person {me:true}) WHERE NOT coalesce(e.newsletter, false) AND NOT coalesce(p.me, false)
+       OPTIONAL MATCH (p)-[:WORKS_AT]->(o:Org)
+       RETURN p.uid AS uid, p.name AS name, o.name AS org, count(e) AS n, max(e.at) AS last ORDER BY n DESC LIMIT 5`,
+      {},
+      'who writes to me most (newsletters excluded)',
+    );
+    cards.push({ type: 'graph', title: 'Who writes to you', focus: rows.map((r) => r.uid) });
+    return done(rows.length ? `Who writes to you most (newsletters left out):\n${rows.map((r, i) => `${i + 1}. **${r.name}**${r.org && r.org !== 'Lumen Labs' ? ` (${r.org})` : ''} — ${r.n} email${r.n > 1 ? 's' : ''}, last ${ago(r.last)}`).join('\n')}` : 'Nobody has emailed you yet.');
+  }
+
+  // ---- "can Priya take LUM-131 (too)?" — a fit check for that person on that ticket
+  if (/\bcan\b.+\b(take|handle|pick up|own|do)\b/.test(low) && first('Person') && keysIn.length) {
+    const who = first('Person')!;
+    const ranked = await rankOwners(ctx.g, `ticket:${keysIn[0]}`);
+    const me = ranked.find((r) => r.uid === who.uid);
+    const owner = (await ctx.g.one(`MATCH (:Ticket {key:$k})-[:ASSIGNED_TO]->(a:Person) RETURN a.uid AS uid`, { k: keysIn[0] }, '~current owner'))?.uid;
+    const best = ranked.find((r) => r.uid !== who.uid && r.uid !== owner);
+    const name = (await ctx.g.one(`MATCH (p:Person {uid:$u}) RETURN p.name AS n`, { u: who.uid }))?.n || 'They';
+    const n = (k: number, w: string) => `${k} ${w}${k === 1 ? '' : 's'}`;
+    const hands = me ? [me.commits && n(me.commits, 'commit'), me.docs && n(me.docs, 'doc'), me.tickets && n(me.tickets, 'past ticket')].filter(Boolean).join(', ') : '';
+    const verdict = !me ? `**Not a good fit** — ${name} has no hands-on work on the systems ${keysIn[0]} touches.`
+      : (me.p1s || 0) > 0 ? `**Possible, but ${name.split(' ')[0]} is already on a P1** — they know the area (${hands || 'project member'}), and this would stack a second urgent item on them.`
+      : me === ranked[0] ? `**Yes — ${name} is the best fit** (${hands || 'on the project'}, ${n(me.load, 'open ticket')}).`
+      : `**Yes, they could** (${hands || 'on the project'}, ${n(me.load, 'open ticket')}), though ${ranked[0].name} is a stronger fit.`;
+    return done(`${verdict}${best && (!me || (me.p1s || 0) > 0) ? ` Better option: **${best.name}**${best.role ? ` (${best.role})` : ''}.` : ''}`);
+  }
+
+  // ---- "who should I talk to about VAT?" — the people behind a topic
+  const topic = low.match(/\bwho (?:should i|do i|can i|to) (?:talk|speak|ask|go) (?:to )?(?:about|re|regarding|for) (.+?)\??$/);
+  if (topic && !first('System')) {
+    const hits = await search(ctx.g, topic[1], ['Ticket', 'Doc', 'Decision', 'ChatMessage', 'Project', 'Email'], 8);
+    if (hits.length) {
+      const people = await ctx.g.q(
+        `UNWIND $u AS x MATCH (n {uid:x})-[r:ASSIGNED_TO|OWNS|DECIDED_BY|POSTED|REPORTED_BY|FROM|RAISED_BY|WORKS_ON]-(p:Person)
+         WHERE NOT coalesce(p.me, false) AND coalesce(p.role, '') <> 'Newsletter'
+         RETURN p.uid AS uid, p.name AS name, p.role AS role, count(*) AS n, collect(DISTINCT type(r) + ':' + coalesce(n.key, n.name))[0..2] AS via ORDER BY n DESC LIMIT 4`,
+        { u: hits.map((h: Row) => h.uid) },
+        `people behind "${topic[1]}"`,
+      );
+      if (people.length) {
+        const verb: Record<string, string> = { ASSIGNED_TO: 'owns', OWNS: 'owns', DECIDED_BY: 'decided', POSTED: 'posted', REPORTED_BY: 'reported', FROM: 'wrote', RAISED_BY: 'raised', WORKS_ON: 'works on' };
+        cards.push({ type: 'graph', title: `About ${topic[1]}`, focus: [...people.map((p) => p.uid), ...hits.slice(0, 4).map((h: Row) => h.uid)] });
+        return done(`Talk to **${people[0].name}**${people[0].role ? ` (${people[0].role})` : ''} first.\n${people.map((p) => `- **${p.name}** — ${(p.via as string[]).map((v) => { const [r, x] = v.split(':'); return `${verb[r] || r.toLowerCase()} ${x}`; }).join('; ')}`).join('\n')}`);
+      }
+    }
   }
 
   // ---- compare two people or two systems
@@ -525,7 +642,7 @@ export async function triageReply(ctx: Ctx, call: (n: string, a?: any) => Promis
     'tickets my coding agents can fix (repo connected)',
   );
   const tick = fixable.map((i: any) => i.key);
-  if (tick.length) opts.push({ key: '', label: `Fix ${tick.join(' + ')} with my coding agents`, value: `Fix ${tick.join(' and ')}` });
+  if (tick.length) opts.push({ key: '', label: config.hosted ? `Plan a fix for ${tick.join(' + ')} (agents run in the desktop app)` : `Fix ${tick.join(' + ')} with my coding agents`, value: `Fix ${tick.join(' and ')}` });
   const top = d.threads[0];
   if (top) opts.push({ key: '', label: `Draft a reply to ${top.sender.split(' ')[0]}`, value: `Draft a reply to ${top.sender}` });
   const dec = d.decisions[0];
@@ -598,6 +715,10 @@ async function composeReply(ctx: Ctx, call: (n: string, a?: any) => Promise<Tool
 
 /** "Fix LUM-142 or reply to Kate first?" — rank both items on the triage ranking and say why. */
 async function whichFirst(ctx: Ctx, call: (n: string, a?: any) => Promise<ToolResult>, t: string, keys: string[], ents: Ent[]) {
+  for (const label of ['Org', 'Project', 'System', 'Person']) {
+    const two = ents.filter((e) => e.label === label);
+    if (two.length >= 2 && !keys.length) return compareTwo(ctx, call, label, two.slice(0, 2));
+  }
   const d = (await call('triage')).data as any;
   type Item = { label: string; rank: number; why: string };
   const items: Item[] = [];
@@ -636,4 +757,66 @@ async function biggestRisks(call: (n: string, a?: any) => Promise<ToolResult>, c
   if (opts.length) cards.push({ type: 'options', question: 'Dig into one?', options: opts });
   const [a, ...rest] = top;
   return `**Your biggest risk: ${a.title}.** ${a.detail}\n\n${rest.length ? `Next:\n${rest.map((t, i) => `${i + 2}. **${t.title}** (${t.section.toLowerCase()}) — ${t.detail}`).join('\n')}\n\n` : ''}Everything else is in **Graph → Insights**.`;
+}
+
+/** "Is Brightwave or Kestrel more important?" — the same measure on both, and which way it points. */
+async function compareTwo(ctx: Ctx, call: (n: string, a?: any) => Promise<ToolResult>, label: string, two: Ent[]) {
+  if (label === 'Org') {
+    const all = ((await call('customer_health')).data || []) as any[];
+    const [a, b] = two.map((e) => all.find((r) => r.uid === e.uid));
+    if (a && b) {
+      const top = a.arr * (1 + a.risk / 100) >= b.arr * (1 + b.risk / 100) ? a : b;
+      const other = top === a ? b : a;
+      return `**${top.name}** — $${Math.round(top.arr / 1000)}k ARR and risk ${top.risk}${top.signals[0] ? ` (${top.signals[0].what})` : ''}, against ${other.name}'s $${Math.round(other.arr / 1000)}k and risk ${other.risk}.${top.next ? ` First move: ${top.next.label.toLowerCase()}.` : ''}`;
+    }
+  }
+  if (label === 'Project') {
+    const cps = [];
+    for (const e of two) cps.push((await call('critical_path', { project: e.uid })).data as any);
+    const [a, b] = cps;
+    const n = (c: any) => c?.blockers?.length || 0;
+    const worse = n(a) >= n(b) ? a : b;
+    return `**${worse.project.name}** needs you more: ${n(worse)} blocker${n(worse) === 1 ? '' : 's'}, the root one ${worse.blockers[0]?.kind === 'decision' ? `a decision waiting on ${worse.blockers[0].waitsOnMe ? 'you' : worse.blockers[0].owner}` : worse.blockers[0]?.key || 'none'}; ${(worse === a ? b : a).project.name} has ${n(worse === a ? b : a)}.`;
+  }
+  if (label === 'System') {
+    const rs = [];
+    for (const e of two) rs.push((await call('blast_radius', { ref: e.uid })).data as any);
+    const [a, b] = rs;
+    const w = (r: any) => (r.dependents?.length || 0) * 10 + (r.arr || 0) / 10_000;
+    const top = w(a) >= w(b) ? a : b;
+    const other = top === a ? b : a;
+    return `**${top.system.name}** matters more: ${top.dependents.length} dependent systems and $${Math.round((top.arr || 0) / 1000)}k ARR ride on it, against ${other.dependents.length} and $${Math.round((other.arr || 0) / 1000)}k for ${other.system.name}.`;
+  }
+  const parts = [];
+  for (const e of two) parts.push((await call('workload', { person: e.uid })).text);
+  return parts.join('\n\n');
+}
+
+/** A short board / leadership update, every line from the graph. */
+async function boardUpdate(ctx: Ctx, call: (n: string, a?: any) => Promise<ToolResult>) {
+  const g = ctx.g;
+  const cust = await g.q(`MATCH (o:Org {kind:'customer'}) RETURN o.name AS name, coalesce(o.arr, 0) AS arr ORDER BY arr DESC`, {}, 'ARR by customer');
+  const health = ((await call('customer_health')).data || []) as any[];
+  const projects = await g.q(`MATCH (p:Project) WHERE p.status <> 'planned' RETURN p.uid AS uid, p.name AS name, p.status AS status ORDER BY p.name`, {}, 'projects in flight');
+  const lines: string[] = [];
+  for (const p of projects) {
+    const c = (await call('critical_path', { project: p.uid })).data as any;
+    const b = c?.blockers?.[0];
+    lines.push(`- **${p.name}** — ${p.status}${b ? `; first in the way: ${b.kind === 'decision' ? `the decision “${b.title}”` : `${b.key} (${b.title})`}` : ''}`);
+  }
+  const p1 = await g.q(`MATCH (t:Ticket {status:'open', priority:'P1'}) RETURN t.key AS key, t.title AS title`, {}, 'open P1s');
+  const decisions = await g.q(`MATCH (d:Decision {status:'pending'}) RETURN d.text AS text`, {}, 'decisions pending');
+  const atRisk = health.filter((h) => h.level === 'at risk');
+  return `**Board update — draft from the graph**
+
+**Revenue:** $${Math.round(cust.reduce((n, c) => n + c.arr, 0) / 1000)}k ARR across ${cust.length} customers (${cust.map((c) => `${c.name} $${Math.round(c.arr / 1000)}k`).join(', ')}).${atRisk.length ? ` At risk: ${atRisk.map((h) => `${h.name} (${h.signals[0]?.what || 'see health'})`).join('; ')}.` : ''}
+
+**Projects:**
+${lines.join('\n')}
+
+**Incidents:** ${p1.length ? p1.map((t) => `${t.key} ${t.title}`).join('; ') : 'no open P1s'}.
+
+**Decisions we owe:** ${decisions.map((d) => d.text).join('; ') || 'none'}.
+
+_Everything above is read from the graph; Show path has the queries. Churn and pipeline numbers aren't in the graph — add them by hand._`;
 }

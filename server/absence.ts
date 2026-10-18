@@ -23,8 +23,8 @@ export async function rankOwners(g: UserGraph, ticketUid: string, without: strin
      WITH t, s, p, commits, count(DISTINCT d) AS docs
      OPTIONAL MATCH (p)<-[:ASSIGNED_TO]-(past:Ticket)-[:AFFECTS]->(s) WHERE past <> t
      WITH t, p, sum(commits) AS commits, sum(docs) AS docs, count(DISTINCT past) AS tickets
-     OPTIONAL MATCH (p)-[:WORKS_ON]->(:Project)-[:USES]->(:System)<-[:AFFECTS]-(t)
-     WITH p, commits, docs, tickets, count(*) > 0 AS onProject
+     OPTIONAL MATCH (p)-[:WORKS_ON|OWNS]->(pr:Project)-[:USES]->(:System)<-[:AFFECTS]-(t)
+     WITH p, commits, docs, tickets, count(pr) > 0 AS onProject
      OPTIONAL MATCH (p)<-[:ASSIGNED_TO]-(open:Ticket {status:'open'})
      WITH p, commits, docs, tickets, onProject, count(DISTINCT open) AS load, sum(CASE open.priority WHEN 'P1' THEN 1 ELSE 0 END) AS p1s
      OPTIONAL MATCH (p)-[:ATTENDS]->(e:Event) WHERE e.start > $now AND e.start < $soon
@@ -144,7 +144,8 @@ export async function absenceImpact(g: UserGraph, personUid: string): Promise<Ab
      WITH c, collect(DISTINCT {name: coalesce(ctx.name, ctx.title), person: ctx:Person}) AS overlap
      RETURN c.uid AS uid, c.name AS name, c.role AS role, size(overlap) AS shared, overlap
      ORDER BY shared DESC LIMIT 10`,
-    { p: personUid, aliases: [...(await aliasMap(g))].filter(([, main]) => main === personUid).map(([dup]) => dup) },
+    // no chat handles as context or as cover — they're people already counted under their real name
+    { p: personUid, aliases: [...(await aliasMap(g)).keys()] },
     'who shares the most context with them',
   );
 

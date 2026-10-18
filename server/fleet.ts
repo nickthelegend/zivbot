@@ -145,9 +145,10 @@ export async function routeJob(g: UserGraph, systems: string[]): Promise<RouteCh
     if (r.preference) { score += 2 * r.preference; reasons.push(r.preference > 0 ? 'you said you prefer it' : 'you said to avoid it'); }
     // the web demo has no CLIs: still show how the graph would pick, and say where it runs
     if (!r.installed && !config.hosted) { score -= 100; reasons.push('not installed on this computer'); }
+    if (config.hosted) reasons.push('runs in the desktop app');
     if (r.limitedUntil > now) { score -= 50; reasons.push(`out of quota until ${new Date(r.limitedUntil).toLocaleTimeString()}`); }
     if (!reasons.length) reasons.push('no history yet');
-    return { agent: r.agent, kind: r.kind, name: r.name, score: +score.toFixed(2), reasons, installed: !!r.installed || config.hosted };
+    return { agent: r.agent, kind: r.kind, name: r.name, score: +score.toFixed(2), reasons, installed: !!r.installed };
   }).sort((a, b) => b.score - a.score);
 }
 

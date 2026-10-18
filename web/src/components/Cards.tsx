@@ -179,7 +179,7 @@ function DraftCard({ draft }: { draft: Draft }) {
         <div className="agent-choices">
           <div className="choices-label">Picked from your subscriptions by graph history — tap to switch</div>
           {draft.choices.slice(0, 4).map((c) => (
-            <button key={c.kind} className={`agent-choice ${agent === c.kind ? 'on' : ''} ${!c.installed ? 'off' : ''}`} disabled={done || !c.installed} onClick={() => setAgent(c.kind)}>
+            <button key={c.kind} className={`agent-choice ${agent === c.kind ? 'on' : ''} ${!c.installed && !hosted ? 'off' : ''}`} disabled={done || (!c.installed && !hosted)} onClick={() => setAgent(c.kind)}>
               <AppIcon slug={AGENT_SLUG[c.kind] || 'zivbot'} size={26} />
               <span className="grow"><b>{c.name}</b><small>{c.reasons.join(' · ')}</small></span>
               <span className="score">{c.score > -50 ? c.score.toFixed(1) : '—'}</span>

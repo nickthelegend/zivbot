@@ -69,7 +69,7 @@ function McpBox() {
     <section className="mcp-box">
       <div className="grow">
         <h3><Icon.bolt size={14} /> Use your graph from any agent (MCP)</h3>
-        <small>28 graph tools — blast radius, critical path, diagnose, what-if, PageRank and more — with the Cypher behind every answer. Works in Claude Code, Codex, Cursor and Claude Desktop.</small>
+        <small>29 graph tools — blast radius, critical path, diagnose, what-if, PageRank and more — with the Cypher behind every answer. Works in Claude Code, Codex, Cursor and Claude Desktop.</small>
         <code className="mcp-cmd">{cmd}</code>
       </div>
       <button className="btn ghost sm" onClick={() => void navigator.clipboard.writeText(cmd).then(() => toast('Copied'))}>Copy</button>

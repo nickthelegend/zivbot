@@ -844,33 +844,36 @@ export const tools: Tool[] = [
   {
     name: 'propose_reassign',
     description: 'Rebalance work using the graph: for a ticket, rank people by how well they know the affected systems (commits, docs, tickets, projects) minus their current load (open tickets, meetings in the next 2 days), and propose moving it to the best one. Needs approval.',
-    params: { type: 'object', properties: { ticket: { type: 'string' } }, required: ['ticket'] },
-    async run({ g, dot }, { ticket }) {
+    params: { type: 'object', properties: { ticket: { type: 'string' }, draft: { type: 'boolean', description: 'false: just answer who fits, no approval draft' }, to: { type: 'string', description: 'optional: the person you want it moved to' } }, required: ['ticket'] },
+    async run({ g, dot }, { ticket, draft = true, to }) {
       const t = await resolve(g, ticket, ['Ticket']);
       if (!t) return { text: `I couldn't find ticket ${ticket}.` };
       const cur = await g.one(`MATCH (t:Ticket {uid:$u}) OPTIONAL MATCH (t)-[:ASSIGNED_TO]->(a:Person) RETURN t.key AS key, t.title AS title, a.uid AS who, a.name AS whoName`, { u: t.uid }, 'current owner');
-      const scored = await rankOwners(g, t.uid);
-      const best = scored.find((c) => c.uid !== cur?.who);
+      const scored = (await rankOwners(g, t.uid)).sort((a, b) => b.score - a.score || (a.uid === cur?.who ? -1 : b.uid === cur?.who ? 1 : 0));
+      const wanted = to ? await resolve(g, to, ['Person']) : null;
+      const best = (wanted && (scored.find((c) => c.uid === wanted.uid) || { uid: wanted.uid, name: wanted.name, commits: 0, docs: 0, tickets: 0, load: 0, meetings: 0, score: 0, know: 0, cost: 0, onProject: false })) || scored.find((c) => c.uid !== cur?.who);
       if (!best) return { text: `Nobody else in the graph knows the systems ${cur?.key} touches — keep it with ${cur?.whoName || 'its owner'}.` };
       const n = (k: number, w: string) => `${k} ${w}${k === 1 ? '' : 's'}`;
       const why = (c: any) => [c.commits && n(c.commits, 'commit'), c.docs && n(c.docs, 'doc'), c.tickets && n(c.tickets, 'past ticket'), `${c.load} open`, n(c.meetings, 'meeting') + ' soon'].filter(Boolean).join(', ');
       const curRow = scored.find((c) => c.uid === cur?.who);
-      const d = await draftNode(g, {
+      const d = !draft ? null : await draftNode(g, {
         kind: 'reassign', title: `Reassign ${cur.key} to ${best.name}`, to: best.name, dot,
         detail: `${cur.key} · ${cur.title}`,
         body: `${best.name}: ${why(best)} (score ${best.score})${curRow ? `\n${cur.whoName}: ${why(curRow)} (score ${curRow.score})` : ''}`,
         payload: { ticket: t.uid, from: cur?.who, to: best.uid, key: cur.key },
         links: [{ rel: 'FOR_TICKET', to: t.uid }, { rel: 'PROPOSES', to: best.uid }],
       });
-      const ownerBest = scored[0]?.uid === cur?.who;
+      const ownerBest = !wanted && scored[0]?.uid === cur?.who;
       return {
         text: ownerBest
           ? `**${cur.whoName}** is still the best fit for ${cur.key} (${why(curRow)}). If you want it off their plate, **${best.name}** is next — ${why(best)}.`
           : `**${best.name}** is the best owner for ${cur.key} right now — ${why(best)}.${curRow ? ` ${cur.whoName} has ${why(curRow)}.` : ''}${(best as any).p1s ? (() => { const alt = scored.find((c) => c.uid !== best.uid && c.uid !== cur?.who); return ` Heads up: ${best.name.split(' ')[0]} is already on a P1${alt ? ` — **${alt.name}** is next if you'd rather spread the load (${why(alt)})` : ''}.`; })() : ''}`,
         cards: [
           { type: 'list', title: 'Who could take it', items: scored.slice(0, 4).map((c) => ({ title: `${c.name} · score ${c.score}`, subtitle: why(c), uid: c.uid, badge: c.uid === cur?.who ? 'owner' : c.uid === best.uid ? 'best' : 'option', tone: c.uid === best.uid ? 'green' : 'gray' })) },
-          { type: 'draft', draft: { uid: d, kind: 'reassign', status: 'pending', title: `Reassign ${cur.key} to ${best.name}`, to: best.name, detail: `${cur.key} · ${cur.title}`, body: `${best.name}: ${why(best)} (score ${best.score})${curRow ? `\n${cur.whoName}: ${why(curRow)} (score ${curRow.score})` : ''}` } },
-        ],
+          // a question gets an answer and a button; only "reassign X" makes a draft
+          d ? { type: 'draft', draft: { uid: d, kind: 'reassign', status: 'pending', title: `Reassign ${cur.key} to ${best.name}`, to: best.name, detail: `${cur.key} · ${cur.title}`, body: `${best.name}: ${why(best)} (score ${best.score})${curRow ? `\n${cur.whoName}: ${why(curRow)} (score ${curRow.score})` : ''}` } }
+            : { type: 'options', question: 'Move it?', options: [{ key: 'A', label: `Reassign ${cur.key} to ${best.name}`, value: `Reassign ${cur.key} to ${best.name}` }] },
+        ] as Card[],
         data: { best, scored },
       };
     },
@@ -936,8 +939,9 @@ export const tools: Tool[] = [
       const first = top[0];
       const upstream = c.upstream.length ? ` It waits on ${c.upstream.map((u) => `**${u.name}**${u.status ? ` (${u.status})` : ''}`).join(' → ')}.` : '';
       const arr = c.customers.reduce((n, o) => n + o.arr, 0);
+      const blockedHard = c.blockers.some((b) => b.kind === 'decision' || b.priority === 'P1') || c.upstream.length > 0;
       const text = [
-        `**${c.project.name}**${c.project.status ? ` is ${/^(beta|alpha|review)$/.test(c.project.status) ? `in ${c.project.status}` : c.project.status}` : ''}.${upstream}`,
+        `${blockedHard ? `**Not on track** — ${c.blockers.length} thing${c.blockers.length > 1 ? 's' : ''} stand${c.blockers.length > 1 ? '' : 's'} in the way.` : `**On track, with ${c.blockers.length} open item${c.blockers.length > 1 ? 's' : ''} to watch.**`} **${c.project.name}**${c.project.status ? ` is ${/^(beta|alpha|review)$/.test(c.project.status) ? `in ${c.project.status}` : c.project.status}` : ''}.${upstream}`,
         '',
         'Root blockers, most of the chain first:',
         ...top.map((b, i) => `${i + 1}. ${label(b)}\n   ↳ ${arrow(b)}`),
@@ -1024,7 +1028,7 @@ export const tools: Tool[] = [
           Org: `MATCH (x:Org) OPTIONAL MATCH (p:Person)-[:WORKS_AT]->(x) RETURN x.uid AS uid, x.name AS name, count(DISTINCT p) AS n, collect(DISTINCT p.name)[0..4] AS ex`,
         },
         systems: {
-          Org: `MATCH (x:Org {kind:'customer'}) OPTIONAL MATCH (x)-[:USES]->(:System)-[:DEPENDS_ON*0..3]->(s:System) RETURN x.uid AS uid, x.name AS name, count(DISTINCT s) AS n, collect(DISTINCT s.name)[0..5] AS ex`,
+          Org: `MATCH (x:Org {kind:'customer'}) OPTIONAL MATCH (x)-[:USES]->(:System)-[:DEPENDS_ON*0..3]->(s:System) RETURN x.uid AS uid, x.name AS name, count(DISTINCT s) AS n, collect(DISTINCT s.name)[0..10] AS ex`,
           Project: `MATCH (x:Project) OPTIONAL MATCH (x)-[:USES]->(s:System) RETURN x.uid AS uid, x.name AS name, count(DISTINCT s) AS n, collect(DISTINCT s.name)[0..5] AS ex`,
         },
       };
@@ -1117,7 +1121,10 @@ export const tools: Tool[] = [
         const everyone = (await toolByName('workload')!.run({ g } as any, {})).data as any[];
         const teamAvg = everyone.reduce((n, x) => n + x.load, 0) / Math.max(1, everyone.length);
         const a = await absenceImpact(g, r.uid);
-        const verdict = r.load > teamAvg * 1.6 && r.load >= 6 ? `**${r.name} is carrying well above the team**` : r.load > teamAvg ? `**${r.name} is a bit above the team**` : `**${r.name} is at or below the team's load**`;
+        // "overloaded" needs real weight: two or more open tickets, or a P1 on top of a full week of meetings
+      const p1 = (r.tickets as string[]).some((x) => x.endsWith('P1'));
+      const heavy = r.tickets.length >= 2 || (p1 && r.meetings >= 3) || r.decisions >= 2;
+      const verdict = heavy ? `**${r.name} is carrying a lot**` : r.load > teamAvg ? `**${r.name} is busier than average, not overloaded**` : `**${r.name} is at or below the team's load**`;
         return {
           text: `${verdict} (load ${r.load} vs team average ${teamAvg.toFixed(1)}).\n${line(r)}.${a?.orphaned.length ? `\nThey are also the only person who knows ${a.orphaned.map((s) => s.name).join(', ')}.` : ''}`,
           cards: [{ type: 'graph', title: `${r.name}'s load`, focus: [r.uid] }],
@@ -1209,8 +1216,9 @@ export const tools: Tool[] = [
       label: { type: 'string', enum: ['Ticket', 'Project', 'System', 'Org', 'Decision', 'Person', 'Event', 'Doc', 'Team'] },
       status: { type: 'string' }, priority: { type: 'string' }, kind: { type: 'string' }, tier: { type: 'string' },
       within: { type: 'string', description: 'optional: only those connected to this entity (people on a project, tickets on a system, systems a customer uses…)' },
+      olderThanDays: { type: 'number', description: 'optional: created more than N days ago' },
     }, required: ['label'] },
-    async run({ g }, { label, status, priority, kind, tier, within }) {
+    async run({ g }, { label, status, priority, kind, tier, within, olderThanDays }) {
       const where: string[] = [];
       const params: Record<string, unknown> = { now: Date.now() };
       let scope = '';
@@ -1236,23 +1244,24 @@ export const tools: Tool[] = [
       if (tier) { where.push('n.tier = $tier'); params.tier = tier; }
       if (label === 'Person') where.push('NOT coalesce(n.me, false) AND coalesce(n.role, "") <> "Newsletter"');
       if (label === 'Event') where.push('n.start > $now');
+      if (olderThanDays) { where.push('n.at < $before'); params.before = Date.now() - olderThanDays * DAY; }
       const allowed = ['Ticket', 'Project', 'System', 'Org', 'Decision', 'Person', 'Event', 'Doc', 'Team'];
       if (!allowed.includes(label)) return { text: `I can list ${allowed.join(', ')}.` };
       const rows = await g.q(
         `${scope ? scope.replace('(n)', `(n:${label})`) : `MATCH (n:${label}) `}${where.length ? `WHERE ${where.join(' AND ')}` : ''}
          OPTIONAL MATCH (n)-[:ASSIGNED_TO|AWAITS]->(a:Person)
-         RETURN n.uid AS uid, coalesce(n.key, n.name, n.title) AS name, n.title AS title, n.status AS status, n.priority AS priority, n.kind AS kind, n.tier AS tier, n.arr AS arr, n.role AS role, n.start AS start, CASE WHEN coalesce(a.me, false) THEN 'waiting on you' ELSE a.name END AS owner
+         RETURN n.uid AS uid, n.at AS at, coalesce(n.key, n.name, n.title) AS name, n.title AS title, n.status AS status, n.priority AS priority, n.kind AS kind, n.tier AS tier, n.arr AS arr, n.role AS role, n.start AS start, CASE WHEN coalesce(a.me, false) THEN 'waiting on you' ELSE a.name END AS owner
          ORDER BY coalesce(n.priority, 'Z'), coalesce(n.start, 0), name LIMIT 60`,
         params,
         `list ${label}${where.length ? ` where ${Object.entries({ status, priority, kind, tier }).filter(([, v]) => v).map(([k, v]) => `${k}=${v}`).join(', ')}` : ''}`,
       );
       const what = [status, priority, label === 'Org' ? (kind || 'org') : tier, label === 'Org' ? '' : label.toLowerCase()].filter(Boolean).join(' ');
-      const on = scopeName ? ` on ${scopeName}` : '';
+      const on = `${scopeName ? ` on ${scopeName}` : ''}${olderThanDays ? ` open more than ${olderThanDays} days` : ''}`;
       const plural = (n: number) => (n === 1 ? what : what.replace(/(y)$/, 'ie').replace(/(person)$/, 'people') + (what.endsWith('person') ? '' : 's'));
       if (!rows.length) return { text: `There are no ${plural(0)}${on} in the graph.` };
       const arr = rows.reduce((n, r) => n + (r.arr || 0), 0);
       const line = (r: any) => {
-        const bits = [label === 'Ticket' && !priority ? r.priority : '', !status ? r.status : '', !tier ? r.tier : '', !kind ? r.kind : '', r.role, r.arr ? `$${Math.round(r.arr / 1000)}k ARR` : '', r.start ? when(r.start) : '', r.owner ? (r.owner === 'waiting on you' ? r.owner : `→ ${r.owner}`) : ''].filter(Boolean);
+        const bits = [label === 'Ticket' && olderThanDays && r.at ? `${Math.round((Date.now() - r.at) / DAY)}d old` : '', label === 'Ticket' && !priority ? r.priority : '', !status ? r.status : '', !tier ? r.tier : '', !kind ? r.kind : '', r.role, r.arr ? `$${Math.round(r.arr / 1000)}k ARR` : '', r.start ? when(r.start) : '', r.owner ? (r.owner === 'waiting on you' ? r.owner : `→ ${r.owner}`) : ''].filter(Boolean);
         return `- **${r.name}**${r.title && r.title !== r.name ? ` — ${clip(r.title, 70)}` : ''}${bits.length ? ` (${bits.join(', ')})` : ''}`;
       };
       return {
