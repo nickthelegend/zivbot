@@ -453,6 +453,7 @@ textarea.draft-body { resize: vertical; outline: none; }
   .mascot { display: none; }
   .graph-toolbar { padding-right: 0; padding-top: 40px; }
   /* the explorer stacks on phones: a fixed-height canvas, then the details/console below it */
+  .composer .chip-btn.info.static { display: none; }
   .graph-view { overflow-y: auto; overflow-x: hidden; }
   .graph-view .seg.big { max-width: 100%; overflow-x: auto; scrollbar-width: none; }
   .graph-main { display: flex; flex-direction: column; flex: none; }

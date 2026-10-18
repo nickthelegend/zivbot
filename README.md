@@ -10,15 +10,23 @@
 
 <p align="center"><img src="docs/screenshots/chat.png" width="880" alt="Ziv triaging from the graph"></p>
 
-| Show path: the Cypher behind every answer | A real Codex run, picked by graph routing |
+| What's blocking the EU launch: BLOCKED_BY to the root blocker | What if Hana is out: the person removed from the graph |
 |---|---|
+| <img src="docs/screenshots/critical-path.png" alt="Critical path"> | <img src="docs/screenshots/what-if.png" alt="What if someone is out"> |
+| **Customer health from tickets, incidents and threads** | **"The portal is slow": DEPENDS_ON upstream to the cause** |
+| <img src="docs/screenshots/customer-health.png" alt="Customer health"> | <img src="docs/screenshots/diagnose.png" alt="Diagnose"> |
+| **Options weighed on the graph before you decide** | **Counting and listing with aggregate Cypher** |
+| <img src="docs/screenshots/decide.png" alt="Decide"> | <img src="docs/screenshots/count.png" alt="Count"> |
+| **Show path: the Cypher behind every answer** | **A real Codex run, picked by graph routing** |
 | <img src="docs/screenshots/trace.png" alt="Trace drawer"> | <img src="docs/screenshots/forge-run.png" alt="Forge running Codex"> |
-| **Insights: bus factor, single points of failure, who's waiting** | **@-mention dots and plugins** |
+| **Insights: customers at risk, blocked work, bus factor, SPOFs** | **@-mention dots and plugins** |
 | <img src="docs/screenshots/insights.png" alt="Insights"> | <img src="docs/screenshots/mentions.png" alt="Mentions"> |
 | **FalkorDB algorithms as tools** | **The live graph model (Schema)** |
 | <img src="docs/screenshots/algorithms.png" alt="Algorithms"> | <img src="docs/screenshots/schema.png" alt="Schema"> |
-| **Your graph + Cypher console** | **Connect Apps: 28 connectors and your AI subscriptions** |
+| **Your graph + Cypher console** | **Connect Apps, plus your graph over MCP** |
 | <img src="docs/screenshots/graph.png" alt="Graph explorer"> | <img src="docs/screenshots/connect.png" alt="Connect Apps"> |
+| **⌘K across dots and the whole graph** | **Phone width** |
+| <img src="docs/screenshots/palette.png" alt="Palette"> | <img src="docs/screenshots/mobile.png" width="300" alt="Mobile"> |
 
 ---
 

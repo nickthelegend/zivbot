@@ -10,11 +10,10 @@ type Schema = Awaited<ReturnType<typeof api.schema>>;
 const PRESETS: { label: string; body: Parameters<typeof api.runAlgorithm>[0] }[] = [
   { label: 'Most central people', body: { algorithm: 'pagerank', label: 'Person', rel: 'COLLABORATES' } },
   { label: 'Systems everything leans on', body: { algorithm: 'pagerank', label: 'System', rel: 'DEPENDS_ON' } },
-  { label: 'Bottleneck systems', body: { algorithm: 'betweenness', label: 'System', rel: 'DEPENDS_ON' } },
   { label: 'Brokers between teams', body: { algorithm: 'betweenness', label: 'Person', rel: 'COLLABORATES' } },
-  { label: 'Real working groups', body: { algorithm: 'communities', label: 'Person', rel: 'COLLABORATES' } },
+  { label: 'Real working groups', body: { algorithm: 'communities', label: 'Person', rel: 'CLOSE_TO' } },
   { label: 'Who depends on billing-db', body: { algorithm: 'reach', source: 'billing-db', rel: 'DEPENDS_ON', direction: 'in', depth: 4 } },
-  { label: 'Warm path to Maya Lin', body: { algorithm: 'shortest_path', source: 'person:me', target: 'Maya Lin', rel: 'COLLABORATES' } },
+  { label: 'Warm path: Leo → Kate Morgan', body: { algorithm: 'shortest_path', source: 'Leo Okafor', target: 'Kate Morgan', rel: 'COLLABORATES' } },
   { label: 'Islands in the dependency graph', body: { algorithm: 'components', label: 'System', rel: 'DEPENDS_ON' } },
 ];
 
