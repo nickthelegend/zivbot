@@ -6,7 +6,7 @@
 
 > 🏁 **Graph Hacks: Context for AI Agents** (WeMakeDevs × FalkorDB)
 > **Track:** Agents That Act on Connected Data (primary). It also covers Agent Memory and Coordination: per-user graphs, episodic/semantic/procedural memory, and Ziv-to-Ziv handoffs.
-> **Demo video (2:47):** [watch](https://zivbot.vercel.app/demo.mp4) · [file](docs/zivbot-demo.mp4) · **Live:** [zivbot.vercel.app](https://zivbot.vercel.app) · **Built in:** Oct 15–18, 2026
+> **Demo video (2:12):** [watch](https://zivbot.vercel.app/demo.mp4) · [file](docs/zivbot-demo.mp4) · **Live:** [zivbot.vercel.app](https://zivbot.vercel.app) · **Built in:** Oct 15–18, 2026
 
 <p align="center"><a href="https://zivbot.vercel.app/demo.mp4"><b>▶ Watch the 3-minute demo</b></a>: the real app on a real Gmail and GitHub account (one-click Google and GitHub sign-in), the per-chat model picker answering through Codex and Claude on my own subscriptions, an iPhone reaching the laptop over the encrypted relay, and Codex calling ZivBot over MCP. Voiceover by Chatterbox TTS.</p>
 
