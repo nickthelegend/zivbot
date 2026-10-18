@@ -50,6 +50,13 @@ export function GraphView() {
     const ids = new Set(nodes.map((n) => n.id));
     return { nodes, edges: data.edges.filter((e) => ids.has(e.source) && ids.has(e.target)) };
   }, [data, hidden]);
+  const matches = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q || !view) return [];
+    return view.nodes.filter((n) => (n.name || '').toLowerCase().includes(q)).sort((a, b) => (a.name || '').length - (b.name || '').length);
+  }, [search, view]);
+  // one match: select it, so the panel opens and the node is ringed
+  useEffect(() => { if (matches.length === 1) setSelected(matches[0]); }, [matches]);
   const dim = useMemo(() => {
     if (focusSet && view) return new Set(view.nodes.filter((n) => !focusSet.has(n.id)).map((n) => n.id));
     if (!search.trim() || !view) return undefined;
@@ -75,7 +82,7 @@ export function GraphView() {
           <button className={tab === 'algorithms' ? 'on' : ''} onClick={() => setTab('algorithms')}><Icon.bolt size={14} /> Algorithms</button>
           <button className={tab === 'schema' ? 'on' : ''} onClick={() => setTab('schema')}><Icon.database size={14} /> Schema</button>
         </div>
-        <div className="search-box sm"><Icon.search size={15} /><input placeholder="Find a node" value={search} onChange={(e) => { setSearch(e.target.value); setFocusSet(null); }} /></div>
+        <div className="search-box sm"><Icon.search size={15} /><input placeholder="Find a node" value={search} onChange={(e) => { setSearch(e.target.value); setFocusSet(null); }} onKeyDown={(e) => { if (e.key === 'Enter' && matches[0]) setSelected(matches[0]); }} />{search.trim() && <small className="find-count">{matches.length ? `${matches.length} match${matches.length > 1 ? 'es' : ''} · Enter` : 'no match'}</small>}</div>
         {tab === 'explore' && <div className="seg">
           <button className={sizeBy === 'degree' ? 'on' : ''} onClick={() => setSizeBy('degree')}>Size: links</button>
           <button className={sizeBy === 'rank' ? 'on' : ''} onClick={() => setSizeBy('rank')}>Size: PageRank</button>

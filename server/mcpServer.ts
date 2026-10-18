@@ -9,11 +9,11 @@ import { userGraph, withTrace, type Trace } from './graph.ts';
 import { tools } from './tools.ts';
 import { listDots } from './memory.ts';
 
-export const EXPOSED = ['search_graph', 'describe_entity', 'triage', 'who_knows', 'blast_radius', 'connection_path', 'decision_trace', 'customer_history', 'key_people', 'agenda', 'list_agents', 'recall', 'remember', 'run_cypher', 'run_algorithm', 'semantic_search', 'insights', 'decision_impact', 'what_if_absent', 'critical_path', 'customer_health', 'diagnose', 'rank_entities', 'workload', 'recent_from', 'who_could_learn', 'propose_fix', 'draft_email'];
+export const EXPOSED = ['search_graph', 'describe_entity', 'triage', 'who_knows', 'blast_radius', 'connection_path', 'decision_trace', 'customer_history', 'key_people', 'agenda', 'list_agents', 'recall', 'remember', 'run_cypher', 'run_algorithm', 'semantic_search', 'insights', 'decision_impact', 'what_if_absent', 'critical_path', 'customer_health', 'diagnose', 'rank_entities', 'workload', 'recent_from', 'who_could_learn', 'list_entities', 'propose_fix', 'draft_email'];
 
 /** JSON-schema property → zod (enough for our tool params). */
 function zodFor(p: any): z.ZodTypeAny {
-  const base = p.type === 'number' ? z.number() : p.type === 'array' ? z.array(z.string()) : p.type === 'object' ? z.record(z.string(), z.any()) : p.enum ? z.enum(p.enum) : z.string();
+  const base = p.type === 'number' ? z.number() : p.type === 'boolean' ? z.boolean() : p.type === 'array' ? z.array(z.string()) : p.type === 'object' ? z.record(z.string(), z.any()) : p.enum ? z.enum(p.enum) : z.string();
   return p.description ? base.describe(p.description) : base;
 }
 

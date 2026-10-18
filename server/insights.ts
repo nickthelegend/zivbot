@@ -2,6 +2,7 @@ import { config } from './config.ts';
 import type { UserGraph } from './graph.ts';
 import { DAY } from './util.ts';
 import { absenceImpact } from './absence.ts';
+import { knowersAll } from './knowledge.ts';
 import { customerHealth } from './health.ts';
 import { criticalPath } from './blockers.ts';
 import { findDuplicates } from './identity.ts';
@@ -111,32 +112,22 @@ async function staleKnowledge(g: UserGraph): Promise<InsightSection> {
 
 /** Systems whose knowledge sits with one person (commits, owned docs, assigned tickets). */
 async function busFactor(g: UserGraph): Promise<InsightSection> {
-  const rows = await g.q(
-    `MATCH (s:System) WHERE s.tier IN ['critical', 'high']
-     OPTIONAL MATCH (a:Person)<-[:AUTHORED_BY]-(:Commit)-[:TOUCHES]->(:File)-[:IN_REPO]->(:Repo)-[:IMPLEMENTS]->(s)
-     WITH s, collect(a.uid) AS commits
-     OPTIONAL MATCH (s)<-[:ABOUT]-(:Doc)<-[:OWNS]-(b:Person)
-     WITH s, commits, collect(b.uid) AS docs
-     OPTIONAL MATCH (s)<-[:AFFECTS]-(:Ticket)-[:ASSIGNED_TO]->(c:Person)
-     RETURN s.uid AS uid, s.name AS name, s.tier AS tier, commits, docs, collect(c.uid) AS tickets`,
-    {},
-    'knowledge per critical system (commits, docs, tickets)',
-  );
-  const names = new Map((await g.q(`MATCH (p:Person) RETURN p.uid AS uid, p.name AS name`, {}, '~people names')).map((p) => [p.uid, p.name]));
+  const systems = await g.q(`MATCH (s:System) WHERE s.tier IN ['critical', 'high'] RETURN s.uid AS uid, s.name AS name, s.tier AS tier`, {}, 'critical and high-tier systems');
+  const all = await knowersAll(g);
   const items: InsightItem[] = [];
-  for (const r of rows) {
-    const score = new Map<string, number>();
-    for (const [list, w] of [[r.commits, 3], [r.docs, 3], [r.tickets, 2]] as [string[], number][]) for (const u of list) score.set(u, (score.get(u) || 0) + w);
-    const total = [...score.values()].reduce((a, b) => a + b, 0);
+  for (const r of systems) {
+    const ks = all.get(r.uid) || [];
+    const total = ks.reduce((n, k) => n + k.score, 0);
     if (total < 5) continue;
-    const [top, topScore] = [...score.entries()].sort((a, b) => b[1] - a[1])[0];
-    const share = topScore / total;
-    if (share >= 0.55) {
+    const share = ks[0].score / total;
+    if (ks.length === 1 || share >= 0.55) {
       items.push({
-        title: `${r.name}: only ${names.get(top)} really knows it`,
-        detail: `${Math.round(share * 100)}% of the commits, docs and tickets on this ${r.tier} system trace to one person.`,
-        uids: [r.uid, top],
-        severity: r.tier === 'critical' && share >= 0.7 ? 'high' : 'medium',
+        title: ks.length === 1 ? `${r.name}: only ${ks[0].name} knows it` : `${r.name}: mostly ${ks[0].name}`,
+        detail: ks.length === 1
+          ? `All the hands-on work (commits, docs, tickets) on this ${r.tier} system is ${ks[0].name}'s.`
+          : `${Math.round(share * 100)}% of the hands-on work on this ${r.tier} system is ${ks[0].name}'s; ${ks.slice(1).map((k) => k.name).join(', ')} ${ks.length === 2 ? 'is the only other' : 'also know it'}.`,
+        uids: [r.uid, ...ks.map((k) => k.uid)],
+        severity: r.tier === 'critical' && ks.length === 1 ? 'high' : 'medium',
         ask: `Who else could learn ${r.name}?`,
       });
     }
@@ -239,12 +230,13 @@ async function waitingOnYou(g: UserGraph): Promise<InsightSection> {
 
 async function whatChanged(g: UserGraph, since: number): Promise<InsightSection> {
   const rows = await g.q(
-    `MATCH (n:Searchable) WHERE n.firstSeen > $since
+    // source time (when it was sent, filed, decided), not when we synced it — a first import isn't news
+    `MATCH (n:Searchable) WHERE n.at > $since AND n.at <= $now AND (n:Email OR n:ChatMessage OR n:Ticket OR n:Decision OR n:Doc OR n:Run OR n:Fact)
+     AND NOT coalesce(n.newsletter, false)
      WITH [l IN labels(n) WHERE NOT l IN ['Searchable', 'Memorable']][0] AS label, collect(n.uid) AS uids
-     WHERE label <> 'Episode'
      RETURN label, size(uids) AS n, uids[0..8] AS sample ORDER BY n DESC`,
-    { since },
-    'new in the graph since',
+    { since, now: Date.now() },
+    'new activity since (by source time)',
   );
   const acted = await g.q(
     `OPTIONAL MATCH (d:Decision) WHERE d.decidedAt > $since WITH collect(d.uid) AS decided
@@ -256,7 +248,7 @@ async function whatChanged(g: UserGraph, since: number): Promise<InsightSection>
   );
   const a = acted[0] || { decided: [], runs: [], wins: 0, approved: 0 };
   const plural = (l: string, n: number) => (n === 1 ? l : l === 'Person' ? 'People' : l.endsWith('s') ? `${l}es` : `${l}s`);
-  const items: InsightItem[] = rows.slice(0, 5).map((r) => ({ title: `+${r.n} ${plural(r.label, r.n)}`, detail: 'Added in the last 24 hours', uids: r.sample, severity: 'low' }));
+  const items: InsightItem[] = rows.slice(0, 5).map((r) => ({ title: `+${r.n} ${plural(r.label, r.n)}`, detail: 'In the last 24 hours', uids: r.sample, severity: 'low' }));
   const rest = rows.slice(5);
   if (rest.length) items.push({ title: `+${rest.reduce((n, r) => n + r.n, 0)} more`, detail: rest.map((r) => `${r.n} ${plural(r.label, r.n)}`).join(', '), uids: [], severity: 'low' });
   if (a.runs.length) items.unshift({ title: `${a.wins}/${a.runs.length} agent runs succeeded`, detail: `${a.approved} approval${a.approved === 1 ? '' : 's'} and ${a.decided.length} decision${a.decided.length === 1 ? '' : 's'} since yesterday.`, uids: [...a.runs, ...a.decided], severity: 'low' });

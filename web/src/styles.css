@@ -778,3 +778,4 @@ kbd { font: 500 11px Inter, sans-serif; color: var(--muted); background: var(--c
 .mcp-box h3 { display: flex; align-items: center; gap: 6px; margin: 0 0 4px; font-size: 14px; }
 .mcp-box small { color: var(--muted); display: block; line-height: 1.45; }
 .mcp-cmd { display: block; margin-top: 8px; font: 11.5px 'JetBrains Mono', monospace; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 7px 9px; word-break: break-all; user-select: all; }
+.find-count { color: var(--muted); font-size: 11.5px; white-space: nowrap; margin-left: 6px; }

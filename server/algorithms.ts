@@ -105,7 +105,8 @@ export async function runAlgorithm(g: UserGraph, a: AlgoArgs): Promise<AlgoResul
       const paths = rows.map((r) => ({ uids: r.uids, names: r.names, weight: +Number(r.weight).toFixed(3) })).sort((x, y) => x.weight - y.weight);
       const uids = [...new Set(paths.flatMap((p) => p.uids))];
       const nodes = uids.length ? await g.q(`UNWIND $u AS x MATCH (node {uid: x}) RETURN ${nodeOut}`, { u: uids }, '~path nodes') : [];
-      return { ...base, rows: nodes, paths, summary: paths.length ? `Best route: ${paths[0].names.join(' → ')}` : 'No route within 6 hops.' };
+      const direct = paths[0]?.uids.length === 2;
+      return { ...base, rows: nodes, paths, summary: !paths.length ? 'No route within 6 hops.' : direct ? `${paths[0].names[0]} and ${paths[0].names[1]} are already in direct touch — no introduction needed.${paths[1] ? ` Next-best route: ${paths[1].names.join(' → ')}.` : ''}` : `Best route: ${paths[0].names.join(' → ')}` };
     }
   }
 }

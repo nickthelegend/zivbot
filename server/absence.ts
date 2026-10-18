@@ -4,6 +4,7 @@
 // colleagues whose only link to the team runs through them.
 import type { UserGraph } from './graph.ts';
 import { DAY } from './util.ts';
+import { knowersAll, aliasMap, ENGINEERING } from './knowledge.ts';
 
 export type OwnerCandidate = {
   uid: string; name: string; role?: string;
@@ -34,7 +35,8 @@ export async function rankOwners(g: UserGraph, ticketUid: string, without: strin
   return rows
     .map((c) => ({ ...c, know: 3 * c.commits + 3 * c.docs + 2 * c.tickets + (c.onProject ? 1 : 0), cost: 2 * c.load + 0.5 * c.meetings }) as OwnerCandidate)
     .map((c) => ({ ...c, score: +(c.know - c.cost).toFixed(1) }))
-    .filter((c) => c.know > 0)
+    // a new owner has done work on these systems, or is an engineer on the project that uses them
+    .filter((c) => c.commits + c.docs + c.tickets > 0 || (c.onProject && ENGINEERING.test(c.role || '')))
     .sort((a, b) => b.score - a.score);
 }
 
@@ -56,33 +58,25 @@ export async function absenceImpact(g: UserGraph, personUid: string): Promise<Ab
   if (!person) return null;
   const now = Date.now();
 
-  // Who knows each system, from every signal we hold. Remove the person and count who is left.
-  const knowers = await g.q(
-    `MATCH (s:System)
-     OPTIONAL MATCH (a:Person)<-[:AUTHORED_BY]-(:Commit)-[:TOUCHES]->(:File)-[:IN_REPO]->(:Repo)-[:IMPLEMENTS]->(s)
-     WITH s, collect(DISTINCT a.uid) AS k1
-     OPTIONAL MATCH (s)<-[:ABOUT]-(:Doc)<-[:OWNS]-(b:Person)
-     WITH s, k1, collect(DISTINCT b.uid) AS k2
-     OPTIONAL MATCH (s)<-[:AFFECTS]-(:Ticket)-[:ASSIGNED_TO]->(c:Person)
-     WITH s, k1, k2, collect(DISTINCT c.uid) AS k3
-     WITH s, k1 + k2 + k3 AS k
-     WHERE $p IN k
-     OPTIONAL MATCH (o:Org {kind:'customer'})-[:USES]->(s)
-     RETURN s.uid AS uid, s.name AS name, s.tier AS tier, k, collect(DISTINCT o.name) AS customers`,
-    { p: personUid },
-    'systems this person knows, and who else does',
-  );
-  const names = new Map((await g.q(`MATCH (p:Person) RETURN p.uid AS uid, p.name AS name`, {}, '~people')).map((r) => [r.uid, r.name]));
+  // Who knows each system (one shared definition, see knowledge.ts). Remove the person and count who is left.
+  const all = await knowersAll(g);
+  const mine = [...all].filter(([, ks]) => ks.some((k) => k.uid === personUid)).map(([s]) => s);
+  const sysRows = mine.length ? await g.q(
+    `UNWIND $s AS u MATCH (s:System {uid:u}) OPTIONAL MATCH (o:Org {kind:'customer'})-[:USES]->(s)
+     RETURN s.uid AS uid, s.name AS name, s.tier AS tier, collect(DISTINCT o.name) AS customers`,
+    { s: mine },
+    'systems this person knows, and the customers on them',
+  ) : [];
   const orphaned: Absence['orphaned'] = [];
   const fragile: Absence['fragile'] = [];
-  for (const s of knowers) {
-    const left = [...new Set((s.k as string[]).filter((u) => u && u !== personUid))];
+  for (const s of sysRows) {
+    const left = (all.get(s.uid) || []).filter((k) => k.uid !== personUid);
     if (!left.length) orphaned.push({ uid: s.uid, name: s.name, tier: s.tier, customers: s.customers });
-    else if (left.length === 1) fragile.push({ uid: s.uid, name: s.name, tier: s.tier, left: names.get(left[0]) || left[0] });
+    else if (left.length === 1) fragile.push({ uid: s.uid, name: s.name, tier: s.tier, left: left[0].name });
   }
 
   const open = await g.q(
-    `MATCH (t:Ticket)-[:ASSIGNED_TO]->(:Person {uid:$p}) WHERE coalesce(t.status, 'open') <> 'done' AND coalesce(t.status, 'open') <> 'closed'
+    `MATCH (t:Ticket {status:'open'})-[:ASSIGNED_TO]->(:Person {uid:$p})
      RETURN t.uid AS uid, t.key AS key, t.title AS title, t.priority AS priority ORDER BY t.priority`,
     { p: personUid },
     'open work assigned to them',
@@ -148,13 +142,13 @@ export async function absenceImpact(g: UserGraph, personUid: string): Promise<Ab
     `MATCH (p:Person {uid:$p})-[:WORKS_ON|OWNS|COLLABORATES|MEMBER_OF]-(ctx)
      WITH p, collect(DISTINCT ctx) AS mine
      UNWIND mine AS ctx
-     WITH p, ctx WHERE NOT coalesce(ctx.me, false)
+     WITH p, ctx WHERE NOT coalesce(ctx.me, false) AND NOT ctx.uid IN $aliases
      MATCH (ctx)-[:WORKS_ON|OWNS|COLLABORATES|MEMBER_OF]-(c:Person)
-     WHERE c <> p AND NOT coalesce(c.external, false) AND NOT coalesce(c.me, false)
+     WHERE c <> p AND NOT c.uid IN $aliases AND NOT coalesce(c.external, false) AND NOT coalesce(c.me, false) AND coalesce(c.role, '') <> 'Slack member'
      WITH c, collect(DISTINCT {name: coalesce(ctx.name, ctx.title), person: ctx:Person}) AS overlap
-     RETURN c.uid AS uid, c.name AS name, size(overlap) AS shared, overlap
-     ORDER BY shared DESC LIMIT 3`,
-    { p: personUid },
+     RETURN c.uid AS uid, c.name AS name, c.role AS role, size(overlap) AS shared, overlap
+     ORDER BY shared DESC LIMIT 10`,
+    { p: personUid, aliases: [...(await aliasMap(g))].filter(([, main]) => main === personUid).map(([dup]) => dup) },
     'who shares the most context with them',
   );
 
@@ -168,6 +162,7 @@ export async function absenceImpact(g: UserGraph, personUid: string): Promise<Ab
     decisions: decisions.map((d) => ({ uid: d.uid, title: d.title, why: d.how.includes('AWAITS') ? 'waiting on them' : d.how.includes('DECIDED_BY') ? 'they decided it' : 'they raised it' })),
     customers, meetings, isolated, severity,
     // shared projects and teams read better than shared colleagues
-    cover: cover.map((c) => ({ uid: c.uid, name: c.name, shared: c.shared, overlap: [...c.overlap].sort((a: any, b: any) => Number(a.person) - Number(b.person)).map((o: any) => o.name).slice(0, 4) })),
+    // an engineer is covered by an engineer
+    cover: cover.filter((c) => !ENGINEERING.test(person.role || '') || ENGINEERING.test(c.role || '')).slice(0, 3).map((c) => ({ uid: c.uid, name: c.name, shared: c.shared, overlap: [...c.overlap].sort((a: any, b: any) => Number(a.person) - Number(b.person)).map((o: any) => o.name).slice(0, 4) })),
   };
 }

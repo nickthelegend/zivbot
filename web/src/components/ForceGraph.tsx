@@ -21,6 +21,19 @@ export function ForceGraph({
   const view = useRef({ x: 0, y: 0, k: 1 });
   const sim = useRef<{ nodes: N[]; edges: E[] } | null>(null);
   const draw = useRef<() => void>(() => {});
+  // re-layout when the container really changes size (window resize, panel open/close)
+  const [size, setSize] = useState('');
+  const lastSize = useRef('');
+  useEffect(() => {
+    const ro = new ResizeObserver(([e]) => {
+      const w = Math.round(e.contentRect.width / 40), h = Math.round(e.contentRect.height / 40);
+      const k = `${w}x${h}`;
+      if (lastSize.current && lastSize.current !== k) setSize(k);
+      lastSize.current = k;
+    });
+    ro.observe(wrap.current!);
+    return () => ro.disconnect();
+  }, []);
 
   useEffect(() => {
     const el = canvas.current!;
@@ -107,7 +120,7 @@ export function ForceGraph({
     if (ns.length > 300) s.alphaDecay(0.05);
     return () => { s.stop(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nodes, edges, sizeBy, colorBy, meta, spread]);
+  }, [nodes, edges, sizeBy, colorBy, meta, spread, size]);
 
   useEffect(() => { draw.current(); }, [hover, selected, dim, labels]);
 

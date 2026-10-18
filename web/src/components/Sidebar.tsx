@@ -61,7 +61,7 @@ export function Sidebar() {
           const dot = dots.find((x) => x.uid === d?.uid);
           const preview = busy ? 'Working…' : (isGroup && c.lastBy ? `${c.lastBy}: ` : '') + (c.lastText || '').replace(/\*\*|`/g, '').replace(/\n/g, ' ');
           return (
-            <button key={c.uid} className={`conv ${active === c.uid && view === 'chat' ? 'on' : ''}`} onClick={() => void openConversation(c.uid)}>
+            <button key={c.uid} aria-label={`Open ${c.name}`} className={`conv ${active === c.uid && view === 'chat' ? 'on' : ''}`} onClick={() => void openConversation(c.uid)}>
               {isGroup ? <AvatarCluster dots={c.dots} size={40} /> : <Avatar avatar={d?.avatar} color={d?.color || dot?.color} size={40} busy={busy} badge={String(dot?.stage || '').startsWith('onboard')} />}
               <span className="conv-text">
                 <span className="conv-name">{isGroup ? c.name : d?.name}</span>

@@ -39,6 +39,10 @@ const CONCEPTS: [RegExp, string][] = [
 ];
 const concept = (w: string) => CONCEPTS.find(([re]) => re.test(w))?.[1];
 
+const contentWords = (text: string) => text.toLowerCase().replace(/[^\p{L}\p{N}\s-]/gu, ' ').split(/[\s-]+/).filter((w) => w.length > 1 && !STOP.has(w) && !ASK.has(w));
+// question scaffolding: not what the question is about
+const ASK = new Set('anything anyone everyone someone team said saying say tell know think worried worry happening going mention mentioned talk talked news update updates latest recent recently lately'.split(' '));
+
 function tokens(text: string) {
   const words = text.toLowerCase().replace(/[^\p{L}\p{N}\s-]/gu, ' ').split(/[\s-]+/).filter((w) => w.length > 1 && !STOP.has(w));
   const concepts = words.map(concept).filter((c): c is string => !!c);
@@ -137,11 +141,24 @@ export async function semanticSearch(g: UserGraph, query: string, opts: { k?: nu
   );
   // cosine distance: past this, a hit shares words by accident rather than meaning
   const maxDistance = opts.maxDistance ?? (remote() ? 0.75 : 0.85);
-  const top = hits.filter((h) => h.distance <= maxDistance).filter((h) => h.label !== 'Episode' || hits.length < 4).slice(0, k);
+  // …and a hit must share meaning with enough of the question: each content word counts once,
+  // by its stem or its concept, so "purple elephant juggles invoices" can't ride on "invoices" alone
+  const qWords = [...new Set(contentWords(query))];
+  const need = Math.max(1, Math.ceil(qWords.length / 3));
+  const shares = (text: string) => {
+    const hw = contentWords(text);
+    const stems = new Set(hw.map(norm));
+    const concepts = new Set(hw.map(concept).filter(Boolean));
+    return qWords.filter((w) => stems.has(norm(w)) || (concept(w) && concepts.has(concept(w)))).length;
+  };
+  const top = hits
+    .filter((h) => h.distance <= maxDistance && shares(`${h.name} ${h.text || ''}`) >= need)
+    .filter((h) => h.label !== 'Episode' || hits.length < 4)
+    .slice(0, k);
   const about = top.length
     ? await g.q(
       `UNWIND $uids AS u MATCH (n {uid: u})-[r]-(m)
-       WHERE m:Person OR m:System OR m:Project OR m:Org OR m:Ticket OR m:Decision OR m:Repo
+       WHERE (m:Person OR m:System OR m:Project OR m:Org OR m:Ticket OR m:Decision OR m:Repo) AND NOT coalesce(m.me, false)
        RETURN u AS hit, type(r) AS rel, m.uid AS uid, m.name AS name, [l IN labels(m) WHERE l <> 'Searchable'][0] AS label`,
       { uids: top.map((h) => h.uid) },
       'graph expansion of the vector hits',

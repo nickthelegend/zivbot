@@ -101,9 +101,19 @@ function MessageRow({ m, prev, isGroup, answered, latest }: { m: Message; prev?:
 
 function AvatarWithCard({ dot }: { dot?: ReturnType<ReturnType<typeof useDotMap>['get']> }) {
   const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLSpanElement>(null);
+  // click anywhere else or press Escape to close
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false); };
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('mousedown', away);
+    window.addEventListener('keydown', esc);
+    return () => { document.removeEventListener('mousedown', away); window.removeEventListener('keydown', esc); };
+  }, [open]);
   if (!dot) return <Avatar size={26} />;
   return (
-    <span className="avatar-card-anchor" onMouseLeave={() => setOpen(false)}>
+    <span ref={ref} className="avatar-card-anchor" onMouseLeave={() => setOpen(false)}>
       <button onClick={() => setOpen(!open)} aria-label={`${dot.name} profile`}><Avatar avatar={dot.avatar} color={dot.color} size={26} /></button>
       {open && <DotCard dot={dot} style={{ position: 'absolute', left: 0, bottom: 34 }} onClose={() => setOpen(false)} />}
     </span>

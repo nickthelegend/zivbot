@@ -93,7 +93,9 @@ Take FalkorDB away and nothing works.
 24. **What's blocking it?** Ask "what's blocking the EU launch?" and Ziv walks `BLOCKED_BY` upstream (EU Launch → Helios OTA 2.4). It collects the open tickets and pending decisions on every project in the chain, plus the P1/P2 incidents on the systems they ship on, reached through `DEPENDS_ON`. Then it ranks the root blockers by how much of the chain each one gates. Here the answer is a decision waiting on *you*: decision → LUM-131 → OTA 2.4 → EU Launch. One click opens "help me decide", and the explorer has the same question on every project.
 25. **Customer health.** "Which customers are at risk?" scores every customer from what the graph knows about them: their tickets and how old they are, incidents they feel through the systems they use, threads waiting on us, repeated follow-ups, escalation language, how many of us they're connected to, and a meeting coming up. Each score is weighted by ARR and comes with the next step (reply, prep, fix). Both checks also run in **Insights**.
 26. **Diagnose a symptom.** "The customer portal is slow" walks `DEPENDS_ON` *upstream* from checkout-web to the open incident that most likely causes it: LUM-142 on payments-api, one hop away, owned by Priya. It also names who noticed (Kate at Brightwave).
-27. **Count across the graph.** "Which project has the most open tickets?" and "which system has the most dependents?" are answered with an aggregate Cypher query, not a guess. When nothing in the graph fits a question, Ziv says so and offers questions it *can* answer, instead of returning loosely related hits.
+27. **Count and list across the graph.** "How many open P1s?", "list all open tickets", "what's our total ARR?", "which project has the most open tickets?" and "which system has the most dependents?" all run an aggregate Cypher query, not a guess. When nothing in the graph fits a question, Ziv says so and offers questions it *can* answer, instead of returning loosely related hits.
+28. **Options weighed on the graph.** "Should we delay the EU launch?" finds the pending decision about it and weighs each option. Delaying slips EU Launch, and Leo, Hana and Maya are waiting on a date. Dropping Helios v1 hits Brightwave ($184k ARR). "Who should I talk to before the Stripe cutover?" names the people working on what that decision touches.
+29. **One definition of "knows".** Who-knows, the bus-factor insight, the what-if and who-could-learn all share `knowledge.ts`: commits, owned docs and assigned tickets count. A chat handle that resolves to a directory person counts as that person. Suggested owners must have done real work on the system, or be an engineer on the project.
 
 ## Design decisions
 
@@ -103,6 +105,35 @@ Take FalkorDB away and nothing works.
 - **Agents read through tools, never raw writes.** Agent-written Cypher runs with `GRAPH.RO_QUERY` and a 5 s timeout. Every action (email, invite, reassign, merge, coding run) becomes a `:Draft` that waits for approval.
 - **The planner is deterministic by default.** The hosted demo uses the graph planner, an intent router over the same tools, so it can't run out of LLM quota during judging. Set an OpenAI-compatible endpoint and the same tools go to a model that picks them itself. The MCP server (`npm run mcp`) hands the same tools to any MCP client.
 - **Semantic memory is local by default.** It uses feature hashing plus a small concept layer, so the demo needs no API key. Set `ZIV_EMBED_*` to use real embeddings in the same FalkorDB vector index. Matches past a distance threshold are dropped, so it says "I don't know" instead of returning noise.
+
+## Feasibility: from demo to product
+
+**Measured, not guessed.** These numbers come from local FalkorDB on a laptop, running the demo company (258 nodes, 1,344 edges, with the full-text and vector indexes). To reproduce the latency figures, run the planner over the ten core questions with tracing on.
+
+| | |
+|---|---|
+| Graph size per tenant | about 1 MB of graph data (`GRAPH.MEMORY USAGE`). 13 tenants plus FalkorDB itself use 101 MB. |
+| Cypher latency | 101 queries across ten real questions: **p50 0.5 ms, p95 1.4 ms, max 3.3 ms** |
+| End-to-end answer (graph planner) | **p50 4.4 ms, p95 11 ms**, including entity resolution and every hop |
+| LLM cost per answer | **$0** by default: the graph planner needs no model. A model is optional, bring your own key. |
+| Coding-agent cost | **$0 to us**: runs go to the user's own Codex, Claude Code or OpenCode subscription. That's the agent-native model. |
+
+**Why it scales the cheap way.** Every user is a separate FalkorDB graph in one instance, so isolation costs nothing per query. A tenant is a few MB, and dropping one is a single command. The hosted demo drops graphs nobody has opened in a week. Work grows with the size of a tenant's graph, not with the number of tenants, and the background loop only visits the 50 most recently active users.
+
+**What already protects the hosted demo:**
+- Agent- and user-written Cypher runs with `GRAPH.RO_QUERY` and a 5-second timeout.
+- Every action is a `:Draft` that waits for approval.
+- Rate limits cover new graphs, messages, the Cypher console and MCP.
+- Unknown user ids get a 401 on every route.
+- Connectors that read the host's files or start processes (MCP stdio, local git, docs folder, coding-agent CLIs) are refused when hosted.
+- Connector secrets stay on the server and are never returned to the browser.
+
+**What a production version adds (not built yet):**
+1. **Real sign-in.** Today a user id is a random 80-bit capability; production would put proper sign-in in front of the same per-user graphs (Loom, the author's earlier project, uses Supabase auth for this).
+2. **Per-tenant quotas.** Cap nodes per graph and runs per day.
+3. **FalkorDB Cloud or a replica set** instead of one Railway container.
+4. **The desktop app as the runner.** The web dashboard stays thin, and coding agents keep running on the user's machine.
+
 
 ## Architecture
 
