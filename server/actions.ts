@@ -24,6 +24,19 @@ export async function approveDraft(userId: string, g: UserGraph, draftUid: strin
   const conv = dot ? (await getDot(g, dot))?.conv : null;
   let result = '';
 
+  // When your real Gmail / Google Calendar is connected, approving sends for real.
+  const liveGoogle = !!(await g.one(`MATCH (c:Connector {uid:'connector:google', status:'connected'}) RETURN c.uid AS u`, {}, 'is your real Google connected?'));
+  let sentLive = '';
+  if (d.d.kind === 'email' && liveGoogle) {
+    const to = await g.one(`MATCH (p:Person {uid:$u}) RETURN p.email AS email, p.name AS name`, { u: payload.to }, 'their address');
+    if (!to?.email) throw new Error(`I don't have an email address for ${payload.to}`);
+    sentLive = await runConnectorAction(userId, g, 'google', 'send_email', { to: to.email, subject: payload.subject, body: edits.body ?? payload.body, threadId: String(payload.thread || '').startsWith('thread:gmail:') ? payload.thread : undefined });
+  }
+  if (d.d.kind === 'event' && liveGoogle) {
+    const emails = (await g.q(`UNWIND $u AS x MATCH (p:Person {uid:x}) WHERE p.email IS NOT NULL RETURN p.email AS e`, { u: payload.attendees }, 'attendee addresses')).map((r) => r.e);
+    sentLive = await runConnectorAction(userId, g, 'google', 'create_event', { title: payload.title, start: new Date(payload.start).toISOString(), minutes: payload.minutes, attendees: emails, meet: true });
+  }
+
   if (d.d.kind === 'email') {
     const body = edits.body ?? payload.body;
     const e = uid('email');
@@ -35,14 +48,14 @@ export async function approveDraft(userId: string, g: UserGraph, draftUid: strin
       await g.q(`MATCH (t:Thread {uid:$t}) SET t.awaitingReply = false, t.lastAt = $now`, { t: payload.thread, now: Date.now() }, 'thread answered');
     }
     await link(g, 'Draft', 'BECAME', 'Email', [{ from: draftUid, to: e }]);
-    result = `Sent "${payload.subject}".`;
+    result = sentLive ? `Sent from your Gmail — ${sentLive.replace(/^Sent /, '')}` : `Sent "${payload.subject}".`;
   } else if (d.d.kind === 'event') {
     const e = uid('event');
     await upsertNodes(g, 'Event', [{ uid: e, props: { name: payload.title, title: payload.title, start: payload.start, end: payload.start + payload.minutes * 60_000, source: 'gcal', createdBy: 'zivbot' }, search: payload.title }]);
     await g.q(`MATCH (e:Event {uid:$e}), (me:Person {me:true}) MERGE (me)-[:ATTENDS]->(e)`, { e }, 'I attend');
     await link(g, 'Person', 'ATTENDS', 'Event', payload.attendees.map((p: string) => ({ from: p, to: e })));
     await link(g, 'Draft', 'BECAME', 'Event', [{ from: draftUid, to: e }]);
-    result = `Booked ${payload.title} for ${when(payload.start)}.`;
+    result = sentLive ? `Booked in your Google Calendar — ${sentLive.replace(/^Created /, '')}` : `Booked ${payload.title} for ${when(payload.start)}.`;
   } else if (d.d.kind === 'run' && config.hosted) {
     // Coding agents run on the user's own subscriptions, on the user's own machine.
     result = `Queued "${payload.goal}" for the desktop app — coding agents run on your machine, not on the web demo.`;

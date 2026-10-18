@@ -108,9 +108,14 @@ export const google: ConnectorDef = {
       };
     });
 
+    // you are the owner of this mailbox: your address belongs to "me", so triage, agenda and replies are yours
+    if (myEmail) await g.q(`MATCH (m:Person {me:true}) SET m.gmail = $e, m.email = CASE WHEN m.email IS NULL OR m.email ENDS WITH '.example' OR m.email CONTAINS 'lumen' THEN $e ELSE m.email END`, { e: myEmail }, 'your Gmail address is you');
     const humans: PersonIn[] = [];
     for (const m of msgs) for (const a of [m.from, ...m.to]) if (a?.email) humans.push({ id: a.email, email: a.email, name: a.name, source: 'google', external: !!myEmail && a.email.split('@')[1] !== myEmail.split('@')[1] });
     const people = await upsertPeople(g, humans);
+    // if your address had already become a separate person, fold it into "me"
+    const dupMe = await g.one(`MATCH (m:Person {me:true}), (p:Person) WHERE p <> m AND toLower(p.email) = $e RETURN m.uid AS me, p.uid AS dup`, { e: myEmail }, 'is your address a separate person?');
+    if (dupMe) { const { mergePeople } = await import('../../identity.ts'); await mergePeople(g, dupMe.me, dupMe.dup); for (const [k, v] of people) if (v === dupMe.dup) people.set(k, dupMe.me); }
 
     const byThread = new Map<string, typeof msgs>();
     for (const m of msgs) byThread.set(m.threadId, [...(byThread.get(m.threadId) || []), m]);
