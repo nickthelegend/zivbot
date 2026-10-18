@@ -11,6 +11,7 @@ export type State = {
   error?: string;
   brain: string;
   hosted?: boolean;
+  account?: { github: string; name: string; avatar: string } | null;
   profile: { name?: string };
   dots: Dot[];
   conversations: Conversation[];
@@ -85,6 +86,7 @@ export async function boot() {
     events(onEvent, () => { reloadState(); const a = get().active; if (a) void openConversation(a); });
     void loadConnectors();
     void api.runs().then((runs) => set({ runs: Object.fromEntries(runs.map((r) => [r.uid, r])) }));
+    void api.account().then((a) => set({ account: a.account })).catch(() => {});
   } catch (e: any) {
     set({ error: e.message, ready: false });
     setTimeout(boot, 3000);
@@ -200,6 +202,12 @@ function onEvent(e: any) {
     case 'dots':
     case 'profile':
       reloadState(50);
+      break;
+    case 'account':
+      if (e.status === 'signed-in') { set({ account: e.account }); toast(`Signed in as @${e.account.github} — reading your repositories…`); reloadState(50); }
+      else if (e.status === 'synced') { toast(`Mapped ${e.repos.length} of your repositories into your graph`); reloadState(50); void loadConnectors(); }
+      else if (e.status === 'signed-out') set({ account: null });
+      else if (e.status === 'error' || e.status === 'sync-error') toast(`GitHub: ${e.error}`);
       break;
     case 'error':
       toast(e.message);

@@ -106,13 +106,13 @@ export async function ingestRepo(g: UserGraph, dir: string, opts: { name: string
  * contributors, open issues and PRs, and the file tree. Set GITHUB_TOKEN for
  * higher rate limits.
  */
-export async function ingestGithub(g: UserGraph, full: string) {
+export async function ingestGithub(g: UserGraph, full: string, token?: string) {
   const m = full.trim().replace(/^https?:\/\/github\.com\//, '').replace(/\.git$/, '').match(/^([\w.-]+)\/([\w.-]+)/);
   if (!m) throw new Error('Use owner/repo or a github.com URL');
   const [owner, repo] = [m[1], m[2]];
   const gh = async (path: string) => {
     const r = await fetch(`https://api.github.com/repos/${owner}/${repo}${path}`, {
-      headers: { accept: 'application/vnd.github+json', 'user-agent': 'zivbot', ...(process.env.GITHUB_TOKEN ? { authorization: `Bearer ${process.env.GITHUB_TOKEN}` } : {}) },
+      headers: { accept: 'application/vnd.github+json', 'user-agent': 'zivbot', ...((token || process.env.GITHUB_TOKEN) ? { authorization: `Bearer ${token || process.env.GITHUB_TOKEN}` } : {}) },
     });
     if (!r.ok) throw new Error(`GitHub ${r.status} on ${path || 'repo'}`);
     return r.json() as Promise<any>;

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { api } from '../api';
-import { useStore, set, openConversation } from '../store';
+import { useStore, set, openConversation, toast } from '../store';
 import { Avatar, AvatarCluster } from './Avatar';
 import { AppIcon, Icon } from './icons';
 
@@ -12,6 +12,7 @@ export function Sidebar() {
   const view = useStore((s) => s.view);
   const thinking = useStore((s) => s.thinking);
   const profile = useStore((s) => s.profile);
+  const account = useStore((s) => s.account);
   const connectors = useStore((s) => s.connectors);
   const pending = useStore((s) => s.pendingDrafts);
   const theme = useStore((s) => s.theme);
@@ -77,10 +78,13 @@ export function Sidebar() {
       </div>
       <div className="side-bottom">
         <div className="menu-anchor">
-          <button className="me-avatar" title={profile.name || 'You'} onClick={() => setMenu(menu === 'me' ? null : 'me')}>{(profile.name || 'Y')[0]}</button>
+          <button className="me-avatar" aria-label="You" title={account ? `@${account.github}` : profile.name || 'You'} onClick={() => setMenu(menu === 'me' ? null : 'me')}>{account?.avatar ? <img src={account.avatar} alt="" /> : (profile.name || 'Y')[0]}</button>
           {menu === 'me' && (
             <div className="menu up" onMouseLeave={() => setMenu(null)}>
-              <div className="menu-head">{profile.name || 'You'}</div>
+              <div className="menu-head">{account ? <>{account.name || profile.name} <small>@{account.github}</small></> : profile.name || 'You'}</div>
+              {account
+                ? <button onClick={() => { setMenu(null); void api.signOut(); }}><AppIcon slug="github" size={15} /> Sign out of GitHub</button>
+                : <button onClick={() => { setMenu(null); void api.signIn().then(() => toast('Finish signing in with GitHub in your browser')).catch((e) => toast(e.message)); }}><AppIcon slug="github" size={15} /> Sign in with GitHub</button>}
               <button onClick={() => go({ theme: theme === 'dark' ? 'light' : 'dark' })}>{theme === 'dark' ? <Icon.sun size={15} /> : <Icon.moon size={15} />} {theme === 'dark' ? 'Light' : 'Dark'} mode</button>
               <button onClick={() => { setMenu(null); window.dispatchEvent(new CustomEvent('zivbot:pair')); }}><Icon.phone size={15} /> Pair your phone</button>
               <button onClick={() => go({ view: 'graph', mobileList: false })}><Icon.graph size={15} /> Memory graph</button>

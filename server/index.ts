@@ -11,6 +11,8 @@ import { falkor, userGraph, listGraphs } from './graph.ts';
 import { subscribe, publish } from './bus.ts';
 import { ensureUser, ensureTeam, isUser } from './users.ts';
 import { buildMcp } from './mcpServer.ts';
+import { startGithubSignIn, accountOf, signOut } from './account.ts';
+import { enableRelay, relayStatus, resumeRelays, disableRelay } from './relay.ts';
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 import { handleUserMessage, afterConnect } from './agent.ts';
 import { listDots, listConversations, history, createDot, createGroup, updateDot, markRead, getConversation, DOT_PRESETS, postMessage } from './memory.ts';
@@ -394,6 +396,30 @@ app.post('/api/scan', async (c) => {
   return c.json({ ok: true });
 });
 
+// ------------------------------------------------------------------ account & anywhere
+
+const localBase = () => `http://127.0.0.1:${config.port}`;
+
+app.get('/api/account', async (c) => c.json({ account: await accountOf(user(c)), hosted: config.hosted }));
+app.post('/api/account/github/start', async (c) => {
+  // the redirect lands on a listener on this computer, so sign-in belongs to the desktop / local app
+  if (config.hosted) throw new HttpError(400, 'Sign in with GitHub from the desktop app — it runs on your computer.');
+  return c.json(await startGithubSignIn(user(c)));
+});
+app.post('/api/account/signout', async (c) => { await signOut(user(c)); return c.json({ ok: true }); });
+
+app.get('/api/relay', (c) => c.json({ ...relayStatus(user(c)), hosted: config.hosted }));
+app.post('/api/relay/enable', async (c) => {
+  if (config.hosted) throw new HttpError(400, 'Phone anywhere connects your phone to your own computer — turn it on in the desktop app.');
+  if (c.req.header('x-ziv-via') === 'relay') throw new HttpError(403, 'not from a relayed phone');
+  return c.json(await enableRelay(user(c), localBase));
+});
+app.post('/api/relay/disable', async (c) => {
+  if (c.req.header('x-ziv-via') === 'relay') throw new HttpError(403, 'not from a relayed phone');
+  await disableRelay(user(c), true);
+  return c.json({ ok: true });
+});
+
 // ------------------------------------------------------------------ MCP over HTTP
 
 // Any MCP client (Claude Code, Codex, Cursor, Claude Desktop…) can use a user's graph tools:
@@ -426,6 +452,7 @@ if (existsSync(dist)) {
 
 await falkor();
 startProactive();
+if (!config.hosted) void resumeRelays(localBase);
 serve({ fetch: app.fetch, port: config.port, hostname: process.env.HOST || '0.0.0.0' }, (i) => {
   // never log credentials: the FalkorDB URL can carry a password
   const db = config.falkorUrl.replace(/\/\/[^@/]*@/, '//***@');

@@ -787,3 +787,8 @@ kbd { font: 500 11px Inter, sans-serif; color: var(--muted); background: var(--c
   .graph-main { grid-template-rows: minmax(340px, 1fr) auto; flex: none; min-height: 340px; }
   .graph-canvas { min-height: 340px; }
 }
+.me-avatar img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; display: block; }
+.menu-head small { color: var(--muted); margin-left: 4px; font-weight: 400; }
+.pair-seg { margin: 0 auto 4px; }
+.pair-status { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-2); }
+.dot-live { width: 8px; height: 8px; border-radius: 50%; background: #34d399; box-shadow: 0 0 0 4px color-mix(in srgb, #34d399 25%, transparent); }

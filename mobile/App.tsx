@@ -44,6 +44,13 @@ function PairScreen({ onPaired }: { onPaired: (url: string) => void }) {
     if (!u) return setError('That doesn’t look like a ZivBot link.');
     setBusy(true);
     setError('');
+    // "Anywhere" links carry an encrypted relay in the fragment: the web app reaches your computer
+    // through it, so there is nothing on this network to check — just open it.
+    if (/[#&]relay=/.test(u.hash)) {
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      setBusy(false); setScanning(false);
+      return onPaired(u.toString());
+    }
     try {
       const r = await fetch(`${u.origin}/api/health`);
       const j = await r.json();
@@ -66,11 +73,11 @@ function PairScreen({ onPaired }: { onPaired: (url: string) => void }) {
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={s.pair}>
       <Dot />
       <Text style={s.h1}>Meet your Zivs</Text>
-      <Text style={s.p}>ZivBot runs on your computer — your apps, your AI subscriptions and your memory graph live there. Pair this phone to talk to your Zivs from anywhere in the house.</Text>
+      <Text style={s.p}>ZivBot runs on your computer — your apps, your AI subscriptions and your memory graph live there. Pair this phone and talk to your Zivs from anywhere — at home over Wi-Fi, or out and about through an encrypted relay to your computer.</Text>
       <Pressable style={s.btnPrimary} onPress={async () => { if (!perm?.granted) { const r = await requestPerm(); if (!r.granted) return setError('Camera permission is needed to scan.'); } setScanning(true); }}>
         <Text style={s.btnPrimaryText}>Scan pairing code</Text>
       </Pressable>
-      <Text style={[s.p, { fontSize: 13 }]}>On your computer: profile panel → Phone</Text>
+      <Text style={[s.p, { fontSize: 13 }]}>On your computer: your avatar → Pair your phone</Text>
       <View style={s.row}>
         <TextInput style={s.input} value={text} onChangeText={setText} placeholder="or paste the link, e.g. 192.168.1.4:8787" placeholderTextColor={C.muted} autoCapitalize="none" autoCorrect={false} />
         <Pressable style={s.btn} onPress={() => void tryPair(text)} disabled={busy}>{busy ? <ActivityIndicator color={C.text} /> : <Text style={s.btnText}>Pair</Text>}</Pressable>

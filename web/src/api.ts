@@ -35,18 +35,54 @@ export type Connector = {
 export type Run = { uid: string; goal: string; status: string; startedAt: number; endedAt?: number; tests?: string; branch?: string; agent: string; agentKind: string; tickets: string[]; synthetic?: boolean; kind?: string; log?: string; diff?: string };
 
 const KEY = 'zivbot.user';
+const RELAY_KEY = 'zivbot.relay';
+// "ZivBot anywhere": #pair=<id>&relay=<channel.key>&sb=…&sbk=… (the QR from your computer). The fragment
+// never reaches a server; every call then rides an encrypted Supabase Realtime channel to that computer.
+const frag = new URLSearchParams(location.hash.replace(/^#/, ''));
+export let relayCreds: { relay: string; sb: string; sbk: string } | null = (() => {
+  try {
+    if (frag.get('relay') && frag.get('sb') && frag.get('sbk')) {
+      const c = { relay: frag.get('relay')!, sb: frag.get('sb')!, sbk: frag.get('sbk')! };
+      localStorage.setItem(RELAY_KEY, JSON.stringify(c));
+      return c;
+    }
+    const saved = localStorage.getItem(RELAY_KEY);
+    return saved ? JSON.parse(saved) : null;
+  } catch { return null; }
+})();
 export let userId: string | null = (() => {
-  // ?pair=<id> (from the desktop's QR code) adopts that user's graph on this device
-  const pair = new URLSearchParams(location.search).get('pair');
+  // ?pair=<id> (LAN QR) or #pair=<id> (anywhere QR) adopts that user's graph on this device
+  const pair = new URLSearchParams(location.search).get('pair') || frag.get('pair');
   try {
     if (pair && /^[a-zA-Z0-9_-]{6,64}$/.test(pair)) { localStorage.setItem(KEY, pair); history.replaceState(null, '', location.pathname); }
     return localStorage.getItem(KEY);
   } catch { return pair; }
 })();
+export const viaRelay = () => !!relayCreds;
+export function leaveRelay() { try { localStorage.removeItem(RELAY_KEY); } catch { /* */ } relayCreds = null; }
+
+let relayClient: Promise<import('./relay/relay-client').RelayClient> | null = null;
+function relay() {
+  relayClient ??= (async () => {
+    const [{ RelayClient }, { supabaseRelayTransport }, proto] = await Promise.all([import('./relay/relay-client'), import('./relay/relay-transport'), import('./relay/relay-protocol')]);
+    const dec = new TextDecoder();
+    const creds = proto.unpackCredentials(relayCreds!.relay)!;
+    const t = supabaseRelayTransport(dec.decode(proto.fromB64(relayCreds!.sb)), dec.decode(proto.fromB64(relayCreds!.sbk)), creds.channel);
+    await t.ready();
+    return new RelayClient(t, creds);
+  })();
+  return relayClient;
+}
 
 export const API_BASE: string = ((window as any).ZIVBOT_API || import.meta.env.VITE_API_BASE || '').replace(/\/$/, '');
 
 async function req<T>(path: string, body?: unknown, method?: string): Promise<T> {
+  if (relayCreds) {
+    const r = await (await relay()).request(method || (body !== undefined ? 'POST' : 'GET'), path, { body, timeoutMs: 45_000 });
+    const data: any = r.body ?? {};
+    if (r.status >= 400 && r.status !== 202) throw Object.assign(new Error(data?.error || `error ${r.status}`), { data });
+    return data as T;
+  }
   const r = await fetch(API_BASE + path, {
     method: method || (body !== undefined ? 'POST' : 'GET'),
     headers: { 'content-type': 'application/json', ...(userId ? { 'x-ziv-user': userId } : {}) },
@@ -60,6 +96,8 @@ async function req<T>(path: string, body?: unknown, method?: string): Promise<T>
 
 export const api = {
   async session() {
+    // through the relay the computer already knows who this phone is: it paired as that user
+    if (relayCreds && userId) return { id: userId, created: false };
     const s = await req<{ id: string; created: boolean }>('/api/session', { userId });
     userId = s.id;
     try { localStorage.setItem(KEY, s.id); } catch { /* private mode */ }
@@ -87,7 +125,12 @@ export const api = {
   stats: () => req<{ graph: string; labels: { label: string; n: number }[]; rels: { type: string; n: number }[]; nodes: number; edges: number; graphs: number }>('/api/stats'),
   memory: () => req<{ uid: string; kind: string; text: string; at: number; about: string[] }[]>('/api/memory'),
   outputs: () => req<{ uid: string; name: string; size: number; at: number; dot: string }[]>('/api/outputs'),
-  file: async (uid: string) => (await fetch(`${API_BASE}/api/files/${uid}`, { headers: { 'x-ziv-user': userId || '' } })).text(),
+  file: async (uid: string) => (relayCreds ? String(await req<string>(`/api/files/${uid}`)) : (await fetch(`${API_BASE}/api/files/${uid}`, { headers: { 'x-ziv-user': userId || '' } })).text()),
+  account: () => req<{ account: { github: string; name: string; avatar: string } | null; hosted: boolean }>('/api/account'),
+  signIn: () => req<{ url: string }>('/api/account/github/start', {}),
+  signOut: () => req('/api/account/signout', {}),
+  relayStatus: () => req<{ on: boolean; phones: number; requests: number; hosted: boolean }>('/api/relay'),
+  relayEnable: () => req<{ link: string; on: boolean }>('/api/relay/enable', {}),
   cypher: (cypher: string) => req<{ rows: any[]; text: string }>('/api/cypher', { cypher }),
   createDot: (b: { preset?: string; name?: string; role?: string; avatar?: string; color?: string }) => req<{ dot: string; conv: string }>('/api/dots', b),
   updateDot: (id: string, b: { name?: string; role?: string; avatar?: string; color?: string }) => req(`/api/dots/${id}`, b, 'PATCH'),
@@ -111,6 +154,14 @@ export const api = {
  * catch up on anything missed via onReconnect.
  */
 export function events(onEvent: (e: any) => void, onReconnect?: () => void) {
+  if (relayCreds) {
+    // the same event bus, streamed through the relay
+    let closed = false;
+    void relay().then((c) => { if (!closed) c.openStream('', { onFrame: (f) => onEvent(f), onState: (open) => { if (open) onReconnect?.(); } }); }).catch(() => {});
+    const vis = () => { if (document.visibilityState === 'visible') void relay().then((c) => c.refresh()); };
+    document.addEventListener('visibilitychange', vis);
+    return () => { closed = true; document.removeEventListener('visibilitychange', vis); void relay().then((c) => c.closeStream()); };
+  }
   let es: EventSource | null = null;
   let stopped = false;
   let last = Date.now();
