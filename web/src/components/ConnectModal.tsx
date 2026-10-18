@@ -99,7 +99,7 @@ function AppRow({ c, open, onToggle }: { c: Connector; open: boolean; onToggle: 
       <div className="app-main">
         <AppIcon slug={c.icon} size={38} />
         <div className="grow">
-          <div className="app-name">{c.name}{c.auth === 'demo' && <span className="pill-mini">demo</span>}{c.auth === 'key' && !connected && <span className="pill-mini key">key</span>}</div>
+          <div className="app-name">{c.name}{c.auth === 'demo' && <span className="pill-mini">demo</span>}{c.status === 'demo' && <span className="pill-mini">sample data</span>}{c.auth === 'key' && !connected && <span className="pill-mini key">key</span>}</div>
           <div className="app-desc">{progress && c.status === 'syncing' ? progress : c.error && c.status !== 'connected' ? c.error : connected && c.counts ? Object.entries(c.counts).slice(0, 4).map(([k, v]) => `${v} ${k}`).join(' · ') : c.description}</div>
         </div>
         {c.status === 'desktop only' ? (

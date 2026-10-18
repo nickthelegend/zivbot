@@ -25,7 +25,7 @@ export async function approveDraft(userId: string, g: UserGraph, draftUid: strin
   let result = '';
 
   // When your real Gmail / Google Calendar is connected, approving sends for real.
-  const liveGoogle = !!(await g.one(`MATCH (c:Connector {uid:'connector:google', status:'connected'}) RETURN c.uid AS u`, {}, 'is your real Google connected?'));
+  const liveGoogle = !!(await g.one(`MATCH (c:Connector {uid:'connector:google', status:'connected', mode:'live'}) RETURN c.uid AS u`, {}, 'is your real Google connected?'));
   let sentLive = '';
   if (d.d.kind === 'email' && liveGoogle) {
     const to = await g.one(`MATCH (p:Person {uid:$u}) RETURN p.email AS email, p.name AS name`, { u: payload.to }, 'their address');

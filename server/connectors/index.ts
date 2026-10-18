@@ -45,7 +45,8 @@ export const demoConnector: ConnectorDef = {
     await syncFleet(g);
     await seedRunHistory(g);
     for (const id of ['google', 'slack', 'notion', 'linear']) {
-      await upsertNodes(g, 'Connector', [{ uid: `connector:${id}`, props: { name: id, status: 'connected', mode: 'demo', lastSync: Date.now() }, search: `${id} connector` }]);
+      // the demo fills these apps with synthetic data; your real account can still be connected on top
+      await upsertNodes(g, 'Connector', [{ uid: `connector:${id}`, props: { name: id, status: 'demo', mode: 'demo', lastSync: Date.now() }, search: `${id} connector` }]);
     }
     return { people: dir.people, systems: dir.systems, projects: dir.projects, tickets: t.tickets, emails: m.emails, events: c.events, messages: s.messages, docs: n.docs, files: r.files, commits: r.commits };
   },
@@ -110,7 +111,9 @@ export async function catalogFor(userId: string) {
       fields: (c.fields || []).map((f) => ({ key: f.key, label: f.label, secret: !!f.secret, placeholder: f.placeholder, optional: !!f.optional, env: f.env, help: f.help })),
       configured: configuredFields(userId, c.id, c.fields),
       actions: (c.actions || []).map((a) => ({ name: a.name, description: a.description, mutates: a.mutates })),
-      status: config.hosted && (agent || DESKTOP_ONLY.has(c.id)) ? 'desktop only' : agent ? (agent.installed ? 'connected' : 'not installed') : s?.status || 'available',
+      status: config.hosted && (agent || DESKTOP_ONLY.has(c.id)) ? 'desktop only' : agent ? (agent.installed ? 'connected' : 'not installed')
+        // a real app the demo only filled with sample data isn't connected to *your* account
+        : s?.mode === 'demo' && c.id !== 'demo' ? 'demo' : s?.status || 'available',
       mode: s?.mode, lastSync: s?.lastSync, counts: s?.counts ? JSON.parse(s.counts) : undefined, error: s?.error, version: agent?.version,
     };
   });
