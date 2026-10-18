@@ -250,7 +250,17 @@ export async function plan(ctx: Ctx, input: string, opts: PlanOpts = {}): Promis
   }
   // "which emails haven't I replied to?"
   if (/\b(haven'?t|not|never) (i )?(replied|answered|responded)|\bunreplied\b|\bunanswered\b|\bneed(s)? (a |my )?(reply|response)\b|\bwaiting (for me |on me )?to (reply|respond|answer)\b|\bowe (a |an )?(reply|response|answer)\b|\b(emails?|mails?|threads?|messages?)\b.*\b(reply|respond|answer) to\b/.test(low)) {
-    return done((await call('insights', { focus: 'waiting' })).text);
+    // every thread whose last word isn't yours, newest first — straight from the mail in the graph
+    const rows = await ctx.g.q(
+      `MATCH (t:Thread {awaitingReply:true})<-[:IN_THREAD]-(e:Email) WITH t, max(e.at) AS lastAt
+       MATCH (t)<-[:IN_THREAD]-(last:Email)-[:FROM]->(p:Person) WHERE last.at = lastAt AND coalesce(p.me, false) = false
+       RETURN t.uid AS uid, t.subject AS subject, lastAt, p.name AS who, p.uid AS puid ORDER BY lastAt DESC LIMIT 8`,
+      {}, 'threads waiting on your reply');
+    used.push('graph_query');
+    if (!rows.length) return done((await call('insights', { focus: 'waiting' })).text);
+    cards.push({ type: 'graph', title: 'Waiting on your reply', focus: rows.flatMap((r: Row) => [r.uid, r.puid]) } as Card);
+    const people = [...new Set(rows.map((r: Row) => r.who))];
+    return done(`**${rows.length} email thread${rows.length === 1 ? '' : 's'} waiting on your reply**, from ${people.slice(0, 3).map((x) => `**${x}**`).join(', ')}${people.length > 3 ? ` and ${people.length - 3} more` : ''}:\n${rows.map((r: Row, i: number) => `${i + 1}. **${r.who}** — "${clipText(String(r.subject || '(no subject)'), 80)}", ${ago(r.lastAt)}`).join('\n')}\n\nSay "draft a reply to ${String(rows[0].who).split(' ')[0]}" and I'll write one for you to approve.`);
   }
   // "is Dev on the critical path?"
   if (/\bcritical path\b/.test(low) && first('Person')) {

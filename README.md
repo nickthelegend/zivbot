@@ -8,7 +8,7 @@
 > **Track:** Agents That Act on Connected Data (primary). It also covers Agent Memory and Coordination: per-user graphs, episodic/semantic/procedural memory, and Ziv-to-Ziv handoffs.
 > **Demo video (2:47):** [watch](https://zivbot.vercel.app/demo.mp4) · [file](docs/zivbot-demo.mp4) · **Live:** [zivbot.vercel.app](https://zivbot.vercel.app) · **Built in:** Oct 15–18, 2026
 
-<p align="center"><a href="https://zivbot.vercel.app/demo.mp4"><b>▶ Watch the 3-minute demo</b></a>: the real app, a real Codex run, Codex calling ZivBot over MCP. Voiceover by Chatterbox TTS.</p>
+<p align="center"><a href="https://zivbot.vercel.app/demo.mp4"><b>▶ Watch the 3-minute demo</b></a>: the real app on a real Gmail and GitHub account (one-click Google and GitHub sign-in), the per-chat model picker answering through Codex and Claude on my own subscriptions, an iPhone reaching the laptop over the encrypted relay, and Codex calling ZivBot over MCP. Voiceover by Chatterbox TTS.</p>
 
 <p align="center"><img src="docs/screenshots/chat.png" width="880" alt="Ziv triaging from the graph"></p>
 
@@ -64,10 +64,18 @@ Take FalkorDB away and nothing works.
 2. **Connect everything.** Choose from 28 connectors in the *Connect Apps* catalog. They fall into four groups:
    - **No key:** public GitHub, local git repos, RSS, Hacker News, iCal feeds, local docs, Web/Wikipedia, any MCP server.
    - **Your AI subscriptions:** Codex, Claude Code, Cursor, OpenCode, Grok and Antigravity, detected on your computer.
-   - **API key:** Gmail + Calendar, Slack, Notion, Linear, GitHub (private), Jira, Sentry, Stripe, HubSpot, Vercel, Firecrawl, Telegram, Discord. See [`TODO-KEYS.md`](TODO-KEYS.md).
+   - **One-click sign-in:** **Sign in with Google** (Gmail + Calendar, OAuth with PKCE to a loopback listener; the refresh token stays on your computer) and **Sign in with GitHub** (your own repositories), the way Claude's and ChatGPT's connectors work.
+   - **API key:** Slack, Notion, Linear, GitHub (private), Jira, Sentry, Stripe, HubSpot, Vercel, Firecrawl, Telegram, Discord. See [`TODO-KEYS.md`](TODO-KEYS.md).
    - **Demo:** the **Lumen Labs** synthetic workspace (mail, calendar, Slack, Notion, Linear and a real git repo).
-3. **Triage from the graph.** Threads waiting on you are ranked by customer ARR and sender PageRank. P1/P2 tickets come with their blast radius and the ARR at risk. Pending decisions and calendar clashes are included too.
-4. **Act through your agents.** "Fix LUM-142 and LUM-139":
+3. **Pick the model, per chat.** The composer has a model menu, like Claude's and ChatGPT's:
+   - **Auto:** the graph planner first, a model for the rest.
+   - **Graph only:** Cypher, no model.
+   - **Codex** and **Claude Sonnet/Opus**, on *your own subscriptions* through their CLIs.
+   - Any free tool-calling **OpenRouter** model, listed live.
+
+   Codex and Claude get ZivBot's graph tools over MCP. A per-turn link traces their Cypher into **Show path** and brings their cards (drafts, graphs) back under the reply.
+4. **Triage from the graph.** Threads waiting on you are ranked by customer ARR and sender PageRank. P1/P2 tickets come with their blast radius and the ARR at risk. Pending decisions and calendar clashes are included too.
+5. **Act through your agents.** "Fix LUM-142 and LUM-139":
    - Ziv hands the job to **Forge**, the engineering Ziv.
    - Forge pulls the diagnosis already in Slack and mail, plus the implementing repo and its authors, from the graph.
    - A graph query scores your installed agents.
@@ -113,6 +121,7 @@ Take FalkorDB away and nothing works.
 - **Everything is a node, chat included.** Messages are `:Episode` nodes chained by `NEXT`. Answers are `:Answer` nodes that `USED` the nodes they touched. Drafts, runs, rules and memories are nodes too. Take FalkorDB out and nothing is left: no answers, no memory, no provenance.
 - **Derived edges are kept apart from facts.** `COLLABORATES` is computed from shared mail, meetings, projects, channels and files. The user's own ties go on `IN_TOUCH`, because "me" mails everyone and would otherwise top PageRank. Working groups come from label propagation over strong ties only (`CLOSE_TO`, weight ≥ 2), so a single all-hands meeting doesn't merge every team into one.
 - **Agents read through tools, never raw writes.** Agent-written Cypher runs with `GRAPH.RO_QUERY` and a 5 s timeout. Every action (email, invite, reassign, merge, coding run) becomes a `:Draft` that waits for approval.
+- **You pick the brain.** Each chat has a model menu: Auto (hybrid), Graph only, Codex or Claude on your own subscriptions, or an OpenRouter model. Subscription CLIs reach the graph only through ZivBot's MCP tools, and a per-turn MCP link keeps their Cypher in the answer's trace. So whichever model answers, Show path still shows what it read.
 - **A hybrid brain.** The graph planner (an intent router over the graph tools) answers what it recognises: fast, free and deterministic. When it isn't sure, a model reads the question and picks from the same tools itself (`ZIV_LLM=auto`). The hosted demo uses a free OpenRouter model with a daily budget. Once that budget is spent, the badge switches to "Graph planner" and the planner answers alone until the next day. The MCP server (`npm run mcp`, or `/mcp` over HTTP) gives the same tools to any MCP client, so the agent chooses the tools there too.
 - **Semantic memory is local by default.** It uses feature hashing plus a small concept layer, so the demo needs no API key. Set `ZIV_EMBED_*` to use real embeddings in the same FalkorDB vector index. Matches past a distance threshold are dropped, so it says "I don't know" instead of returning noise.
 
@@ -501,6 +510,18 @@ Configuration (`.env`):
 node scripts/e2e.mjs
 ```
 
+### Sign in with Google (desktop app)
+
+**Connect apps → Google Workspace → Sign in with Google** (or the button in onboarding). Google's consent page opens in your browser. The redirect comes back to a loopback listener (PKCE + state), and ZivBot stores the refresh token locally, then syncs Gmail and Calendar into your graph. Approving an email draft then sends it through your Gmail.
+
+Google needs an OAuth client once per computer:
+1. Create an OAuth client of type **Desktop app** in Google Cloud. Any `127.0.0.1` port is an allowed redirect.
+2. Enable the **Gmail API** and the **Google Calendar API**.
+3. While the app is in Testing mode, add yourself as a test user.
+4. Paste the client ID and secret into the setup panel, or set `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`.
+
+After that, every Google account on the computer is one click.
+
 ### Sign in with GitHub (desktop app)
 
 Avatar → **Sign in with GitHub**. This uses Supabase Auth with PKCE; the redirect comes back to a loopback listener on your computer, against Loom's hosted Supabase project. Once you're signed in:
@@ -562,7 +583,9 @@ For an APK: `eas build -p android --profile preview`.
 
 ## Data used
 
-The demo graph uses only **synthetic data** (the fictional Lumen Labs, under `server/seed/lumen.ts` and `demo/lumen-payments`) and **public data** (public GitHub repos, HN, RSS, Wikipedia), per hackathon rule 6. The key-based connectors are built for real use after the hackathon. Credentials are stored in `~/.zivbot/secrets.json` (mode 0600) and never in the graph.
+**The demo video** runs on the developer's own accounts, signed in with the developer's consent: a Gmail inbox that holds mostly GitHub CI notifications and service notices, and the developer's own public GitHub repositories. One third party's email address appears in a draft. It is blurred in the video, and nothing was sent.
+
+**The hosted demo** at zivbot.vercel.app uses only **synthetic data** (the fictional Lumen Labs, under `server/seed/lumen.ts` and `demo/lumen-payments`) and **public data** (public GitHub repos, HN, RSS, Wikipedia), per hackathon rule 6. The key-based connectors are built for real use after the hackathon. Credentials are stored in `~/.zivbot/secrets.json` (mode 0600) and never in the graph.
 
 ## Project layout
 
@@ -582,12 +605,15 @@ demo/              lumen-payments: the synthetic repo the coding agents fix
 
 ## How the demo video was made
 
-There are no mocks in it. `desktop/scripts/record.cjs` drives the real app in an offscreen Electron window against the local API and FalkorDB, capturing 10 frames a second. In that recording it:
+There are no mocks in it. `desktop/scripts/record-real.cjs` drives the real app in an offscreen Electron window against the local API and FalkorDB, capturing 10 frames a second. It runs on a user signed in with real Google and GitHub accounts. In that recording it:
 
-- connects the demo company and FalkorDB's public GitHub repo;
-- asks the questions;
-- approves a real Codex run on `demo/lumen-payments`, where the tests go from 1/3 to 3/3;
-- runs a real `codex exec` session that calls ZivBot's MCP `critical_path` tool.
+- shows the connected accounts, the graph, its schema, and PageRank and label propagation over the real collaborators;
+- asks questions answered by the graph planner, then by **Codex** and by **Claude**, picked in the composer's model menu, and opens Show path;
+- drafts a reply, which is not sent;
+- makes a new Ziv and shows the Anywhere pairing QR;
+- runs a real `codex exec` session that calls ZivBot's MCP `triage` tool.
+
+The iPhone scene is the iOS Simulator (`xcrun simctl io recordVideo`). Safari opens the Anywhere link and talks to the laptop through the encrypted Supabase relay. The earlier synthetic-company recorder is still in `desktop/scripts/record.cjs`, including the real Codex fix run where the tests go from 1/3 to 3/3.
 
 The voiceover is [Chatterbox TTS](https://github.com/resemble-ai/chatterbox) running locally (`docs/video/tts.py`, from the lines in `docs/video/script.json`). `scripts/make-video.py` fits each scene to its line and burns in the captions.
 

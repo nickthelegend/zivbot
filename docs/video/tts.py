@@ -1,7 +1,7 @@
 # Chatterbox TTS: one wav per line of the script. Usage: python tts.py script.json outdir
 import json, sys, os, torch, torchaudio as ta
 from chatterbox.tts import ChatterboxTTS
-dev = "mps" if torch.backends.mps.is_available() else "cpu"
+dev = os.environ.get("TTS_DEVICE") or ("mps" if torch.backends.mps.is_available() else "cpu")
 model = ChatterboxTTS.from_pretrained(device=dev)
 lines = json.load(open(sys.argv[1]))
 out = sys.argv[2]; os.makedirs(out, exist_ok=True)
