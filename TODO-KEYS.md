@@ -41,6 +41,8 @@ Actions marked *mutating* never run on their own: the dot makes an approval card
 
 ## Google Workspace (Gmail + Calendar) — `google`
 
+> **Hackathon rule 6:** don't load a personal inbox. Make a fresh Google account for the demo, send it real mail and invites, and connect *that*. It's your own data, and nothing personal is in it.
+
 | Env var | Where to get it | Scopes / permissions | Note |
 |---|---|---|---|
 | `GOOGLE_CLIENT_ID` | https://console.cloud.google.com/apis/credentials → Create credentials → OAuth client ID → *Web application*; add `https://developers.google.com/oauthplayground` as an authorized redirect URI | Enable **Gmail API** and **Google Calendar API** in https://console.cloud.google.com/apis/library | While the consent screen is in *Testing*, add yourself as a test user (https://console.cloud.google.com/apis/credentials/consent). |

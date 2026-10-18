@@ -501,6 +501,24 @@ Configuration (`.env`):
 node scripts/e2e.mjs
 ```
 
+### Sign in with GitHub (desktop app)
+
+Avatar → **Sign in with GitHub**. This uses Supabase Auth with PKCE; the redirect comes back to a loopback listener on your computer, against Loom's hosted Supabase project. Once you're signed in:
+
+- your profile and the "me" node in your graph become your GitHub account;
+- your three most recently pushed repositories (contributors, open issues and PRs, files) are mapped into your FalkorDB graph and linked to you. That's real data, and it's yours.
+
+### Your phone, anywhere
+
+Avatar → **Pair your phone → Anywhere** shows a QR code. Scan it with the phone camera or the ZivBot Android app. The phone opens `zivbot.vercel.app`, which reaches **the Zivs on your computer** from any network for as long as the computer is on.
+
+How it stays private:
+- Everything rides a Supabase Realtime broadcast channel, encrypted end to end with XChaCha20-Poly1305 (Loom's relay protocol). Supabase only ever sees ciphertext.
+- The channel id and the 32-byte key exist only on your computer and in the QR's URL fragment, which browsers never send to a server.
+- Every relayed request runs on your computer, as you, through the same API. Pairing, session and sign-in routes can't be called through the relay.
+
+**Same Wi-Fi** pairs over your local network instead.
+
 ### MCP
 
 ```bash
