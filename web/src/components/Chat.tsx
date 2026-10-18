@@ -216,7 +216,7 @@ function Composer({ conv, placeholder }: { conv: string; placeholder: string }) 
         />
         <div className="composer-bar">
         <div className="plus-wrap">
-          <button className="icon-btn round" onClick={() => setMenu(!menu)} title="More"><Icon.plus size={18} /></button>
+          <button aria-label="More" className="icon-btn round" onClick={() => setMenu(!menu)} title="More"><Icon.plus size={18} /></button>
           {menu && (
             <div className="menu up" onMouseLeave={() => setMenu(false)}>
               <button onClick={() => { setMenu(false); set({ connectOpen: true }); }}><Icon.bolt size={15} /> Connect apps</button>
@@ -230,7 +230,7 @@ function Composer({ conv, placeholder }: { conv: string; placeholder: string }) 
           {graph && <button className="chip-btn info" onClick={() => set({ view: 'graph' })} title={`FalkorDB graph ${graph.graph}`}><i className="pulse" />{graph.nodes.toLocaleString()} nodes</button>}
           <span className="chip-btn info static" title="What the dots think with">{brain === 'graph-planner' ? 'Graph planner' : brain.replace(/^llm:/, '').split('/').pop()}</span>
           <span className="grow" />
-          <button className={`icon-btn round ${listening ? 'live' : ''}`} onClick={dictate} title="Dictate"><Icon.mic size={17} /></button>
+          <button aria-label="Dictate" className={`icon-btn round ${listening ? 'live' : ''}`} onClick={dictate} title="Dictate"><Icon.mic size={17} /></button>
           {text.trim() ? (
             <button className="send-btn" onClick={submit} title="Send"><Icon.send size={17} /></button>
           ) : (

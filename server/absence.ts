@@ -8,7 +8,7 @@ import { knowersAll, aliasMap, ENGINEERING } from './knowledge.ts';
 
 export type OwnerCandidate = {
   uid: string; name: string; role?: string;
-  commits: number; docs: number; tickets: number; onProject: boolean; load: number; meetings: number;
+  commits: number; docs: number; tickets: number; onProject: boolean; load: number; p1s?: number; meetings: number;
   know: number; cost: number; score: number;
 };
 
@@ -26,14 +26,15 @@ export async function rankOwners(g: UserGraph, ticketUid: string, without: strin
      OPTIONAL MATCH (p)-[:WORKS_ON]->(:Project)-[:USES]->(:System)<-[:AFFECTS]-(t)
      WITH p, commits, docs, tickets, count(*) > 0 AS onProject
      OPTIONAL MATCH (p)<-[:ASSIGNED_TO]-(open:Ticket {status:'open'})
-     WITH p, commits, docs, tickets, onProject, count(DISTINCT open) AS load
+     WITH p, commits, docs, tickets, onProject, count(DISTINCT open) AS load, sum(CASE open.priority WHEN 'P1' THEN 1 ELSE 0 END) AS p1s
      OPTIONAL MATCH (p)-[:ATTENDS]->(e:Event) WHERE e.start > $now AND e.start < $soon
-     RETURN p.uid AS uid, p.name AS name, p.role AS role, commits, docs, tickets, onProject, load, count(DISTINCT e) AS meetings`,
+     RETURN p.uid AS uid, p.name AS name, p.role AS role, commits, docs, tickets, onProject, load, p1s, count(DISTINCT e) AS meetings`,
     { u: ticketUid, without, now: Date.now(), soon: Date.now() + 2 * DAY },
     'candidates: knowledge of the affected systems vs current load',
   );
   return rows
-    .map((c) => ({ ...c, know: 3 * c.commits + 3 * c.docs + 2 * c.tickets + (c.onProject ? 1 : 0), cost: 2 * c.load + 0.5 * c.meetings }) as OwnerCandidate)
+    // someone already on a P1 shouldn't be handed more
+    .map((c) => ({ ...c, know: 3 * c.commits + 3 * c.docs + 2 * c.tickets + (c.onProject ? 1 : 0), cost: 2 * c.load + 4 * (c.p1s || 0) + 0.5 * c.meetings }) as OwnerCandidate)
     .map((c) => ({ ...c, score: +(c.know - c.cost).toFixed(1) }))
     // a new owner has done work on these systems, or is an engineer on the project that uses them
     .filter((c) => c.commits + c.docs + c.tickets > 0 || (c.onProject && ENGINEERING.test(c.role || '')))
@@ -81,11 +82,6 @@ export async function absenceImpact(g: UserGraph, personUid: string): Promise<Ab
     { p: personUid },
     'open work assigned to them',
   );
-  const tickets: Absence['tickets'] = [];
-  for (const t of open) {
-    const [best] = await rankOwners(g, t.uid, [personUid]);
-    tickets.push({ ...t, next: best ? { uid: best.uid, name: best.name, score: best.score } : undefined });
-  }
 
   const decisions = await g.q(
     `MATCH (d:Decision)-[r:AWAITS|DECIDED_BY|RAISED_BY]->(:Person {uid:$p})
@@ -151,6 +147,15 @@ export async function absenceImpact(g: UserGraph, personUid: string): Promise<Ab
     { p: personUid, aliases: [...(await aliasMap(g))].filter(([, main]) => main === personUid).map(([dup]) => dup) },
     'who shares the most context with them',
   );
+
+  // hand each ticket to the best qualified owner — the best cover, when they qualify, so the plan is one plan
+  const coverPick = cover.filter((c) => !ENGINEERING.test(person.role || '') || ENGINEERING.test(c.role || ''))[0];
+  const tickets: Absence['tickets'] = [];
+  for (const t of open) {
+    const ranked = await rankOwners(g, t.uid, [personUid]);
+    const best = ranked.find((r) => r.uid === coverPick?.uid && r.score >= ranked[0].score - 3) || ranked[0];
+    tickets.push({ ...t, next: best ? { uid: best.uid, name: best.name, score: best.score } : undefined });
+  }
 
   const tierWeight = (t?: string) => (t === 'critical' ? 5 : t === 'high' ? 3 : 1);
   const severity = orphaned.reduce((n, s) => n + 2 * tierWeight(s.tier), 0) + fragile.reduce((n, s) => n + tierWeight(s.tier), 0)

@@ -22,7 +22,7 @@ export function EntityDrawer() {
       <div className="drawer narrow" onClick={(e) => e.stopPropagation()}>
         <div className="drawer-head">
           <div className="drawer-kicker"><Icon.graph size={14} /> Node <code>{uid}</code></div>
-          <button className="icon-btn" onClick={() => set({ entity: undefined })}><Icon.close size={18} /></button>
+          <button aria-label="Close" className="icon-btn" onClick={() => set({ entity: undefined })}><Icon.close size={18} /></button>
         </div>
         {g && <ForceGraph nodes={g.nodes} edges={g.edges} height={260} labels="all" onNodeClick={(n) => set({ entity: n.id })} />}
         <div className="entity-body">{d ? <Markdown text={d.text} /> : <span className="spinner" />}</div>
@@ -42,7 +42,7 @@ export function FileViewer() {
       <div className="modal file-modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head"><h2><Icon.file size={18} /> {f.name}</h2>
           <button className="btn ghost sm" onClick={() => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type: 'text/markdown' })); a.download = f.name; a.click(); }}>Download</button>
-          <button className="icon-btn" onClick={() => set({ file: undefined })}><Icon.close size={18} /></button>
+          <button aria-label="Close" className="icon-btn" onClick={() => set({ file: undefined })}><Icon.close size={18} /></button>
         </div>
         <div className="modal-body doc">{text ? <Markdown text={text} /> : <span className="spinner" />}</div>
       </div>
@@ -62,7 +62,7 @@ export function ExchangeViewer() {
       <div className="drawer narrow" onClick={(e) => e.stopPropagation()}>
         <div className="drawer-head">
           <div><div className="drawer-kicker"><Icon.users size={14} /> Between your dots</div><div className="drawer-title">Messages with {ex.name}</div></div>
-          <button className="icon-btn" onClick={() => set({ exchange: undefined })}><Icon.close size={18} /></button>
+          <button aria-label="Close" className="icon-btn" onClick={() => set({ exchange: undefined })}><Icon.close size={18} /></button>
         </div>
         <div className="exchange-list">
           {!msgs && <span className="spinner" />}
@@ -99,7 +99,7 @@ export function NewDotModal() {
   return (
     <div className="modal-backdrop" onClick={() => set({ newDotOpen: false })}>
       <div className="modal new-dot" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-head"><h2>New dot</h2><button className="icon-btn" onClick={() => set({ newDotOpen: false })}><Icon.close size={18} /></button></div>
+        <div className="modal-head"><h2>New dot</h2><button aria-label="Close" className="icon-btn" onClick={() => set({ newDotOpen: false })}><Icon.close size={18} /></button></div>
         <div className="modal-body">
           <div className="sec-head"><h3>Templates</h3></div>
           <div className="preset-grid">

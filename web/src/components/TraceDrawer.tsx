@@ -37,7 +37,7 @@ export function TraceDrawer() {
               </div>
             )}
           </div>
-          <button className="icon-btn" onClick={() => set({ trace: undefined })}><Icon.close size={18} /></button>
+          <button aria-label="Close" className="icon-btn" onClick={() => set({ trace: undefined })}><Icon.close size={18} /></button>
         </div>
         {t && t.nodes.length > 0 && (
           <div className="drawer-graph">

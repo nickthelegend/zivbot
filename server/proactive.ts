@@ -64,5 +64,8 @@ export async function scanUser(userId: string, force = false) {
   if (!force && last?.fp === fp) return;
   await g.q(`MERGE (n:Notice {uid:'notice:triage'}) SET n.fp = $fp, n.at = $now`, { fp, now: Date.now() }, 'remember what I told you');
   if (!fp) return;
+  // don't talk over someone who is in the conversation right now: they can ask, and they just might have
+  const recent = await g.one(`MATCH (e:Episode)-[:IN]->(:Conversation {uid:$c}) WHERE e.at > $since RETURN count(e) AS n`, { c: chief.conv, since: Date.now() - 15 * 60_000 }, '~is the conversation active');
+  if (!force && recent?.n) return;
   await proactiveTriage(userId, { uid: chief.uid, name: chief.name, role: chief.role, conv: chief.conv });
 }

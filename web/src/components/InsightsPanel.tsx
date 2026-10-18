@@ -32,8 +32,8 @@ export function InsightsPanel({ onShow }: { onShow: (uids: string[]) => void }) 
                 <small>{i.detail}</small>
               </div>
               <div className="insight-actions">
-                <button className="icon-btn" title="Show in graph" onClick={() => onShow(i.uids)}><Icon.graph size={15} /></button>
-                {i.ask && <button className="icon-btn" title={`Ask: ${i.ask}`} onClick={() => void ask(i.ask!)}><Icon.chat size={15} /></button>}
+                <button aria-label="Show in graph" className="icon-btn" title="Show in graph" onClick={() => onShow(i.uids)}><Icon.graph size={15} /></button>
+                {i.ask && <button aria-label={`Ask: ${i.ask}`} className="icon-btn" title={`Ask: ${i.ask}`} onClick={() => void ask(i.ask!)}><Icon.chat size={15} /></button>}
               </div>
             </div>
           ))}

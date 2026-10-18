@@ -107,6 +107,10 @@ export async function plan(ctx: Ctx, input: string, opts: PlanOpts = {}): Promis
   }
 
   // ---- decisions waiting on me: "confirm Oct 28", "go with the shim"
+  // I never delete or rewrite the graph from chat, whatever the wording
+  if (/\b(delete|remove|drop|wipe|erase|destroy|truncate)\b.*\b(all|every|tickets?|nodes?|graph|data|database|everything|records?)\b|ignore (all |your |previous |prior )*instructions/.test(low)) {
+    return done(`I can't do that. I don't delete or rewrite your graph from chat — I read it, and anything I change goes through a draft you approve (emails, invites, reassignments, merges, coding runs). To remove data, disconnect the app it came from in Connect apps.`);
+  }
   const pending = await ctx.g.q(`MATCH (d:Decision {status:'pending'}) OPTIONAL MATCH (d)-[:ABOUT]->(x) RETURN d.uid AS uid, d.text AS text, d.options AS options, collect(x.uid) AS about`, {}, '~pending decisions');
   // An explicit, unambiguous choice records the decision ("confirm Oct 28", "decide: push to Nov 4").
   // "Help me decide …" never decides — it lays out the options and the stakes instead.
@@ -124,9 +128,12 @@ export async function plan(ctx: Ctx, input: string, opts: PlanOpts = {}): Promis
   }
   // advice about something a pending decision is about: "should we delay the EU launch?",
   // "who should I talk to before the Stripe cutover?" — answer with that decision's stakes
-  const advice = /\b(should (we|i)|do we|is it worth|stakeholders?|who should i (talk|speak) to|who (needs|should) to know|who to (loop|bring) in|before (the|we) )/.test(low);
+  const advice = (/\b(should (we|i)|do we|is it worth)\b/.test(low) && /\b(delay|decide|go ahead|launch|push|postpone|cutover|ship|drop|cancel|confirm|lock|wait)\b/.test(low))
+    || /\b(stakeholders?|who should i (talk|speak) to|who (needs|should) to know|who to (loop|bring) in|recommend|what would you do|your (call|advice|take)|advise)\b/.test(low);
   const aboutHit = advice ? pending.find((d) => ents.some((e) => (d.about as string[]).includes(e.uid)) || d.text.toLowerCase().split(/\W+/).some((w: string) => w.length > 5 && low.includes(w))) : null;
-  if ((/\b(decide|decision)\b/.test(low) && !/\bwhy\b|\bwho\b|trace/.test(low)) || aboutHit) {
+  // "show me every decision" / "how many decisions" are listings, not a request to decide
+  const listing = /\b(how many|list|show (me )?(all|the|every)|every|all (the |our |my )?decisions)\b/.test(low);
+  if ((/\b(decide|decision)\b/.test(low) && !listing && !/\bwhy\b|\bwho\b|trace/.test(low)) || aboutHit) {
     const target = aboutHit || pending.find((d) => d.text.toLowerCase().split(/\W+/).some((w: string) => w.length > 4 && low.includes(w))) || pending[0];
     if (target) {
       cards.push({ type: 'options', question: target.text, options: (target.options as string[]).map((o, i) => ({ key: String.fromCharCode(65 + i), label: o, value: `Decide: ${o}` })) });
@@ -141,7 +148,29 @@ export async function plan(ctx: Ctx, input: string, opts: PlanOpts = {}): Promis
   // ---- act: fix tickets with the coding-agent fleet
   const engineer = !opts.dot || /engineer/i.test(opts.dot.role);
   const isWatch = /^(watch|alert me|tell me|let me know|notify me|ping me|warn me|whenever)\b/.test(low);
-  if (!isWatch && /\b(fix|patch|repair|resolve|ship a fix|hand .* to|dispatch)\b/.test(low) && (!opts.inGroup || engineer)) {
+  // "X or Y first?": rank both on the graph instead of acting on either
+  const keysIn = [...t.matchAll(/\b([A-Z]{2,6}-\d+)\b/gi)].map((m) => m[1].toUpperCase());
+  if (/\bor\b/.test(low) && /\b(first|priorit\w*|more (important|urgent)|which (one|should)|before)\b/.test(low)) {
+    return done(await whichFirst(ctx, call, t, keysIn, ents));
+  }
+  // a question about fixing is not an instruction to fix ("is LUM-139 fixable today?")
+  const asking = (/^(is|are|should|which|what|how|why|when|do|does|did|will|was|who)\b/.test(low) || /\bfixable\b/.test(low)) && !/^(can you|could you|would you|please)\b/.test(low);
+  if (asking && keysIn.length && /\b(fix|fixable|patch|resolve)\b/.test(low)) {
+    const k = keysIn[0];
+    const r = await ctx.g.one(
+      `MATCH (t:Ticket {key:$k}) OPTIONAL MATCH (t)-[:AFFECTS]->(s:System)<-[:IMPLEMENTS]-(repo:Repo)
+       OPTIONAL MATCH (t)-[:ASSIGNED_TO]->(a:Person)
+       RETURN t.status AS status, t.priority AS priority, collect(DISTINCT s.name) AS systems, collect(DISTINCT repo.name) AS repos, a.name AS owner`,
+      { k },
+      `can ${k} be fixed by a coding agent (is its repo connected?)`,
+    );
+    const verdict = !r ? `I can't find ${k}.`
+      : r.status !== 'open' ? `${k} is already ${r.status}.`
+      : r.repos.length ? `**Yes — it's fixable by a coding agent.** ${k} (${r.priority}) is on ${r.systems.join(', ')}, and that code (${r.repos.join(', ')}) is connected, so I can hand it to one of your agents on a branch and run the tests. ${r.owner ? `${r.owner} owns it today.` : ''} Say "fix ${k}" to start.`
+      : `**Not by a coding agent yet** — none of the systems ${k} touches has its repo connected. ${r.owner ? `${r.owner} owns it.` : ''}`;
+    return done(`${verdict}\n\n${(await call('timeline', { ref: `ticket:${k}` })).text}`);
+  }
+  if (!asking && !isWatch && /\b(fix|patch|repair|resolve|ship a fix|hand .* to|dispatch)\b/.test(low) && (!opts.inGroup || engineer)) {
     const keys = [...t.matchAll(/\b([A-Z]{2,6}-\d+)\b/gi)].map((m) => m[1].toUpperCase());
     const targets = keys.length ? keys : ents.filter((e) => ['Ticket', 'Org', 'System'].includes(e.label)).map((e) => e.uid);
     if (targets.length) {
@@ -226,7 +255,7 @@ export async function plan(ctx: Ctx, input: string, opts: PlanOpts = {}): Promis
     if (x) return done((await call('blast_radius', { ref: x.uid })).text);
   }
 
-  if (/\b(why did we|why are we|who decided|decid|decision)/.test(low)) {
+  if (/\b(why did we|why are we|who decided|decid|decision)/.test(low) && !listing) {
     const x = first('Project', 'System', 'Org', 'Ticket');
     return done((await call('decision_trace', { topic: x?.uid || t })).text);
   }
@@ -281,8 +310,13 @@ export async function plan(ctx: Ctx, input: string, opts: PlanOpts = {}): Promis
     return done((await call('run_algorithm', args)).text);
   }
 
-  if (/\b(risks?|risky|insights?|single points? of failure|bus factor|overloaded|stretched|what changed|since yesterday|health ?check|anything (worrying|i should worry))\b/.test(low)) {
-    const focus = /bus factor|knows it/.test(low) ? 'bus' : /single point|spof/.test(low) ? 'spof' : /overload|stretched/.test(low) ? 'load' : /what changed|since yesterday/.test(low) ? 'changed' : undefined;
+  if (/\b(risks?|risky|insights?|single points? of failure|bus factor|overloaded|stretched|what changed|since yesterday|health ?check|anything (worrying|i should worry)|slip(ping)?|behind schedule|quits?|leaves)\b/.test(low) && !(ents.length && /\b(worr|should i|is .+ (ok|fine))/.test(low))) {
+    const focus = /bus factor|knows it/.test(low) ? 'bus' : /single point|spof/.test(low) ? 'spof' : /overload|stretched/.test(low) ? 'load' : /what changed|since yesterday/.test(low) ? 'changed'
+      : /\bprojects?\b.*\b(slip|late|behind|risk|delay)|\b(slip|behind schedule)/.test(low) ? 'blocked'
+      : /\b(quits?|leaves|bus|lose|absence|someone (is )?out)\b/.test(low) ? 'absence'
+      : /\bcustomers?\b/.test(low) ? 'customers' : undefined;
+    // a question gets an answer: the single biggest risk first, the next two after, the rest in Insights
+    if (!focus && !/\binsights?\b|health ?check/.test(low)) return done(await biggestRisks(call, cards));
     return done(`${focus === 'changed' ? "Here's what happened in your graph" : "Here's what the graph says you should worry about"}:\n\n${(await call('insights', { focus })).text}`);
   }
 
@@ -303,7 +337,8 @@ export async function plan(ctx: Ctx, input: string, opts: PlanOpts = {}): Promis
     return done(r.text);
   }
 
-  if (/\b(calendar|agenda|meetings?|my day|my week|tomorrow|today)\b/.test(low) && !/\b(reply|email|draft|needs? me|what should|plate|priorit|urgent|attention|triage|important)\b/.test(low)) {
+  // the calendar needs a calendar word; "today" alone ("is LUM-139 fixable today?") isn't one
+  if ((/\b(calendar|agenda|meetings?|schedule|my day|my week)\b/.test(low) || /^(what'?s|what is|anything) (on )?(for )?(today|tomorrow)\b/.test(low)) && !keysIn.length && !/\b(reply|email|draft|needs? me|what should|plate|priorit|urgent|attention|triage|important)\b/.test(low)) {
     return done(`Here's what's coming up:\n${(await call('agenda', { days: 4 })).text}`);
   }
 
@@ -354,9 +389,11 @@ export async function plan(ctx: Ctx, input: string, opts: PlanOpts = {}): Promis
   const listy = /\b(how many|count|number of|list|show (me )?(all|the|every)|all (the |our |my )?|every|total|what are (the|our|my))\b/.test(low);
   const nounMap: [RegExp, string][] = [[/\b(tickets?|issues?|bugs?|incidents?|p[123]s?)\b/, 'Ticket'], [/\bprojects?\b/, 'Project'], [/\b(systems?|services?)\b/, 'System'], [/\b(customers?|clients?|accounts?|vendors?|investors?|prospects?|companies|orgs?)\b/, 'Org'], [/\b(decisions?)\b/, 'Decision'], [/\b(meetings?|events?)\b/, 'Event'], [/\b(docs?|documents?|runbooks?|rfcs?)\b/, 'Doc'], [/\bteams?\b/, 'Team'], [/\b(people|persons?|employees?|engineers?|colleagues)\b/, 'Person']];
   const noun = nounMap.find(([re]) => re.test(low));
-  if ((listy || /\btotal (arr|revenue)\b/.test(low)) && (noun || /\b(arr|revenue)\b/.test(low)) && !first('Person', 'System', 'Project', 'Org')) {
+  const scopeEnt = first('Project', 'System', 'Org', 'Person', 'Team');
+  if ((listy || /\btotal (arr|revenue)\b/.test(low)) && (noun || /\b(arr|revenue)\b/.test(low)) && (!scopeEnt || (noun && noun[1] !== scopeEnt.label))) {
     const label = noun ? noun[1] : 'Org';
     const args: Record<string, string> = { label };
+    if (scopeEnt && noun && noun[1] !== scopeEnt.label) args.within = scopeEnt.uid;
     const p = low.match(/\bp([123])s?\b/); if (p) args.priority = `P${p[1]}`;
     const st = low.match(/\b(open|resolved|closed|pending|blocked|planned|beta|in progress)\b/); if (st) args.status = st[1];
     if (label === 'Ticket' && p && !st) args.status = 'open';
@@ -367,12 +404,21 @@ export async function plan(ctx: Ctx, input: string, opts: PlanOpts = {}): Promis
   }
 
   // ---- counts across the graph: "which project has the most open tickets?"
-  const most = low.match(/\b(?:which|what|who)\b.*?\b(projects?|systems?|services?|customers?|clients?|accounts?|people|person|teams?|who)\b.*\b(?:most|fewest|biggest|largest)\b\s*(.*)$/);
+  const most = low.match(/\b(?:which|what|who)\b.*?\b(projects?|systems?|services?|customers?|clients?|accounts?|people|person|engineers?|developers?|devs?|teams?|who)\b.*\b(?:most|fewest|biggest|largest)\b\s*(.*)$/);
   if (most) {
     const [, noun, rest] = most;
     const label = /project/.test(noun) ? 'Project' : /system|service/.test(noun) ? 'System' : /customer|client|account/.test(noun) ? 'Org' : /team/.test(noun) ? 'Team' : 'Person';
-    const metric = /depend/.test(rest) ? 'dependents' : /customer|client|arr|revenue/.test(rest) ? 'customers' : /people|members|staff|engineers/.test(rest) ? 'people' : /ticket|issue|incident|bug|work|load/.test(rest) ? 'open_tickets' : null;
-    if (metric) return done((await call('rank_entities', { label, metric })).text);
+    const metric = /depend/.test(rest) ? 'dependents' : /\b(systems?|services?)\b/.test(rest) && label !== 'System' ? 'systems' : /customer|client|arr|revenue/.test(rest) ? 'customers' : /people|members|staff|engineers/.test(rest) ? 'people' : /ticket|issue|incident|bug|work|load/.test(rest) ? 'open_tickets' : null;
+    if (metric) return done((await call('rank_entities', { label, metric, engineers: /engineer|developer|\bdevs?\b/.test(noun) })).text);
+  }
+
+  // ---- spare capacity: "who has no open tickets?", "who's free to take something?"
+  if (/\b(no|zero|without) (open )?(tickets|work|issues)|nothing assigned|who('s| is) free|spare capacity|who can (take|pick up)|has (the )?(most )?bandwidth\b/.test(low)) {
+    const r = await call('workload', { engineers: /engineer|developer|\bdevs?\b/.test(low) });
+    const free = ((r.data as any[]) || []).filter((x) => !x.tickets.length);
+    return done(free.length
+      ? `**No open tickets:** ${free.map((x) => `${x.name}${x.role ? ` (${x.role})` : ''}${x.meetings ? `, ${x.meetings} meeting${x.meetings > 1 ? 's' : ''} this week` : ''}`).join('; ')}.\n\nFull picture:\n${r.text}`
+      : `Everyone has at least one open ticket.\n\n${r.text}`);
   }
 
   // ---- "should I worry about X?", "is payments-api ok?", "how is Brightwave doing?"
@@ -383,6 +429,42 @@ export async function plan(ctx: Ctx, input: string, opts: PlanOpts = {}): Promis
     if (x.label === 'Project') return done((await call('critical_path', { project: x.uid })).text);
     if (x.label === 'Org') return done((await call('customer_history', { org: x.uid })).text);
     if (x.label === 'Person') return done((await call('what_if_absent', { person: x.uid })).text);
+  }
+
+  // ---- dates: "when is the EU launch date?"
+  if (/\bwhen (is|are|will|does|do)\b|\b(date|deadline|due|eta|ship date|launch date)\b/.test(low) && first('Project')) {
+    const x = first('Project')!;
+    const r = await ctx.g.one(
+      `MATCH (p:Project {uid:$u})
+       OPTIONAL MATCH (e:Event)-[:ABOUT]->(p) WHERE e.start > $now
+       WITH p, e ORDER BY e.start
+       RETURN p.name AS name, p.status AS status, p.due AS due, p.launchDate AS launch, collect(coalesce(e.title, e.name) + '|' + toString(e.start))[0..3] AS events`,
+      { u: x.uid, now: Date.now() },
+      'dates on the project',
+    );
+    const date = r?.due || r?.launch;
+    const ev = (r?.events || []).filter(Boolean).map((v: string) => { const [t, at] = v.split('|'); return `${t} (${when(Number(at))})`; });
+    const cp = await call('critical_path', { project: x.uid });
+    return done(`${date ? `**${r.name}** is due ${when(Number(date))}.` : `**No date is recorded for ${r?.name}** in the graph${r?.status ? ` — it's ${r.status}` : ''}.`}${ev.length ? ` Coming up: ${ev.join(', ')}.` : ''}\n\n${cp.text}`);
+  }
+
+  // ---- yes/no questions about a thing get a judgement, never a property dump
+  if (/^(is|are|does|do|can|will|has|have|was|were|am)\b/.test(low) && ents.length) {
+    const x = ents[0];
+    if (x.label === 'Person') return done((await call('workload', { person: x.uid })).text);
+    if (x.label === 'Org') return done((await call('customer_health', { org: x.uid })).text);
+    if (x.label === 'System') return done((await call(/\b(slow|broken|down|failing|ok|okay|fine|healthy|working)\b/.test(low) ? 'diagnose' : 'blast_radius', /\b(slow|broken|down|failing|ok|okay|fine|healthy|working)\b/.test(low) ? { system: x.uid } : { ref: x.uid })).text);
+    if (x.label === 'Project') return done((await call('critical_path', { project: x.uid })).text);
+    if (x.label === 'Ticket') return done((await call('timeline', { ref: x.uid })).text);
+  }
+
+  // ---- feelings words map to the graph's version of them
+  if (/\b(happy|unhappy|upset|satisfied|angry|frustrated|annoyed|churn)\b/.test(low) && first('Org', 'Person')) {
+    const o = first('Org') || first('Person')!;
+    return done((await call('customer_health', { org: o.uid })).text);
+  }
+  if (/\b(burn(ing)? ?out|burnt out|stressed|exhausted|tired|drowning)\b/.test(low) && first('Person')) {
+    return done((await call('workload', { person: first('Person')!.uid })).text);
   }
 
   // fuzzy, "anything about…" questions go to semantic memory + graph expansion
@@ -512,4 +594,46 @@ async function composeReply(ctx: Ctx, call: (n: string, a?: any) => Promise<Tool
     ? `Hi ${first},\n\nThanks${last?.subject ? ` for your note on “${String(last.subject).replace(/^re:\s*/i, '')}”` : ''} — here's where things stand:\n${lines.join('\n')}\n\nAnything else you asked for I'll follow up on separately${next ? `, and we can go through it all at ${next.title} (${when(next.start)})` : ''}.\n\nBest,\n${meName}`
     : `Hi ${first},\n\nThanks for the note — I'm on it and will get back to you shortly.\n\nBest,\n${meName}`;
   return call('draft_email', { to: person, body });
+}
+
+/** "Fix LUM-142 or reply to Kate first?" — rank both items on the triage ranking and say why. */
+async function whichFirst(ctx: Ctx, call: (n: string, a?: any) => Promise<ToolResult>, t: string, keys: string[], ents: Ent[]) {
+  const d = (await call('triage')).data as any;
+  type Item = { label: string; rank: number; why: string };
+  const items: Item[] = [];
+  const ranked: { kind: 'ticket' | 'thread' | 'decision'; x: any }[] = [
+    ...d.incidents.map((x: any) => ({ kind: 'ticket' as const, x })),
+    ...d.threads.map((x: any) => ({ kind: 'thread' as const, x })),
+    ...d.decisions.map((x: any) => ({ kind: 'decision' as const, x })),
+  ];
+  // same order as "what needs me": incidents by priority and ARR reached, then waiting threads, then decisions
+  ranked.forEach((r, i) => {
+    if (r.kind === 'ticket' && keys.includes(r.x.key)) items.push({ label: `${r.x.key}`, rank: i + 1, why: `${r.x.priority}${r.x.customers?.length ? `, reaches ${r.x.customers.join(', ')}${r.x.arrAtRisk ? ` ($${Math.round(r.x.arrAtRisk / 1000)}k ARR)` : ''}` : ''}` });
+    if (r.kind === 'thread' && t.toLowerCase().includes(String(r.x.sender).split(' ')[0].toLowerCase())) items.push({ label: `reply to ${r.x.sender}`, rank: i + 1, why: `${r.x.org ? `${r.x.org}, ` : ''}waiting since ${ago(r.x.at)}${r.x.tickets?.length ? `, tied to ${r.x.tickets.join(', ')}` : ''}` });
+    if (r.kind === 'decision' && t.toLowerCase().includes(String(r.x.text).toLowerCase().split(' ').slice(0, 2).join(' '))) items.push({ label: `decide "${r.x.text}"`, rank: i + 1, why: 'waiting on you' });
+  });
+  if (items.length < 2) return `${(await call('triage')).text}`;
+  items.sort((a, b) => a.rank - b.rank);
+  const [a, b] = items;
+  return `**${a.label[0].toUpperCase() + a.label.slice(1)} first** — it ranks #${a.rank} on what needs you (${a.why}); ${b.label} is #${b.rank}${b.why ? ` (${b.why})` : ''}.\n\nThe ranking weighs priority, the customers and ARR each item reaches through the graph, and how long people have waited. Want me to start on ${a.label}?`;
+}
+
+/** "What's our biggest risk?" — rank every high-severity insight and lead with one. */
+async function biggestRisks(call: (n: string, a?: any) => Promise<ToolResult>, cards: Card[]) {
+  const secs = ((await call('insights')).data || []) as { key: string; title: string; items: { title: string; detail: string; severity: string; ask?: string; uids: string[] }[] }[];
+  // what loses money or a launch first, then what loses people or systems
+  const order = ['customers', 'blocked', 'absence', 'bus', 'spof', 'waiting', 'stale', 'load'];
+  const sev = (x: string) => (x === 'high' ? 0 : x === 'medium' ? 1 : 2);
+  const all = secs.filter((s) => order.includes(s.key)).flatMap((s) => s.items.map((i) => ({ ...i, section: s.title, rank: order.indexOf(s.key) })))
+    .sort((a, b) => sev(a.severity) - sev(b.severity) || a.rank - b.rank);
+  // one item per section so the top three are three different kinds of risk
+  const top: typeof all = [];
+  for (const i of all) if (!top.some((t) => t.section === i.section) && top.length < 3) top.push(i);
+  cards.length = 0;
+  if (!top.length) return 'Nothing in the graph looks risky right now.';
+  cards.push({ type: 'graph', title: 'Biggest risks', focus: top.flatMap((t) => t.uids).slice(0, 14) });
+  const opts = top.filter((t) => t.ask).map((t, i) => ({ key: String.fromCharCode(65 + i), label: t.ask!, value: t.ask! }));
+  if (opts.length) cards.push({ type: 'options', question: 'Dig into one?', options: opts });
+  const [a, ...rest] = top;
+  return `**Your biggest risk: ${a.title}.** ${a.detail}\n\n${rest.length ? `Next:\n${rest.map((t, i) => `${i + 2}. **${t.title}** (${t.section.toLowerCase()}) — ${t.detail}`).join('\n')}\n\n` : ''}Everything else is in **Graph → Insights**.`;
 }

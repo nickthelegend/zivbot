@@ -227,7 +227,7 @@ export function RunCard({ uid }: { uid: string }) {
           <small>{run.agent} · {st === 'running' ? 'running on Ziv’s computer…' : st}{run.tests ? ` · tests ${run.tests}` : ''}{run.branch ? ` · ${run.branch}` : ''}</small>
         </div>
         {st === 'running' ? <span className="spinner" /> : st === 'succeeded' ? <span className="ok-tag"><Icon.check size={14} /> Done</span> : <span className="bad-tag">{st}</span>}
-        <button className="icon-btn" onClick={() => setOpen(!open)}><Icon.down size={16} /></button>
+        <button aria-label="Show more" className="icon-btn" onClick={() => setOpen(!open)}><Icon.down size={16} /></button>
       </div>
       {open && (run.log || run.diff) && <pre className="run-log">{(run.log || '').split('\n').slice(-18).join('\n')}{run.diff ? `\n${run.diff}` : ''}</pre>}
     </div>

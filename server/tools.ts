@@ -866,7 +866,7 @@ export const tools: Tool[] = [
       return {
         text: ownerBest
           ? `**${cur.whoName}** is still the best fit for ${cur.key} (${why(curRow)}). If you want it off their plate, **${best.name}** is next — ${why(best)}.`
-          : `**${best.name}** is the best owner for ${cur.key} right now — ${why(best)}.${curRow ? ` ${cur.whoName} has ${why(curRow)}.` : ''}`,
+          : `**${best.name}** is the best owner for ${cur.key} right now — ${why(best)}.${curRow ? ` ${cur.whoName} has ${why(curRow)}.` : ''}${(best as any).p1s ? (() => { const alt = scored.find((c) => c.uid !== best.uid && c.uid !== cur?.who); return ` Heads up: ${best.name.split(' ')[0]} is already on a P1${alt ? ` — **${alt.name}** is next if you'd rather spread the load (${why(alt)})` : ''}.`; })() : ''}`,
         cards: [
           { type: 'list', title: 'Who could take it', items: scored.slice(0, 4).map((c) => ({ title: `${c.name} · score ${c.score}`, subtitle: why(c), uid: c.uid, badge: c.uid === cur?.who ? 'owner' : c.uid === best.uid ? 'best' : 'option', tone: c.uid === best.uid ? 'green' : 'gray' })) },
           { type: 'draft', draft: { uid: d, kind: 'reassign', status: 'pending', title: `Reassign ${cur.key} to ${best.name}`, to: best.name, detail: `${cur.key} · ${cur.title}`, body: `${best.name}: ${why(best)} (score ${best.score})${curRow ? `\n${cur.whoName}: ${why(curRow)} (score ${curRow.score})` : ''}` } },
@@ -965,9 +965,21 @@ export const tools: Tool[] = [
   {
     name: 'customer_health',
     description: 'Rank every customer by risk from graph signals: their open tickets and age, P1/P2 incidents on systems they use (through DEPENDS_ON), threads waiting on us, repeated follow-ups and escalation language, how many people on our side they connect to, and an imminent meeting. Weighted by ARR, with the next action for each.',
-    params: { type: 'object', properties: {} },
-    async run({ g }) {
-      const rows = await customerHealth(g);
+    params: { type: 'object', properties: { org: { type: 'string', description: 'optional: one customer' } } },
+    async run({ g }, { org }) {
+      let rows = await customerHealth(g);
+      if (org) {
+        const o = await resolve(g, org, ['Org', 'Person']);
+        const ou = o?.label === 'Person' ? (await g.one(`MATCH (:Person {uid:$u})-[:WORKS_AT]->(o:Org) RETURN o.uid AS uid`, { u: o.uid }))?.uid : o?.uid;
+        const one = rows.find((r) => r.uid === ou);
+        if (!one) return { text: `${o?.name || org} isn't a customer in the graph, so I don't have a health read on them.` };
+        const verdict = one.level === 'at risk' ? 'No — they are at risk' : one.level === 'watch' ? 'Mostly, but worth watching' : 'Yes, by everything the graph shows';
+        return {
+          text: `**${verdict}** (${one.name}: risk ${one.risk}${one.arr ? `, $${Math.round(one.arr / 1000)}k ARR` : ''}).${one.signals.length ? `\n${one.signals.map((x) => `- ${x.what}`).join('\n')}` : '\nNothing open, nobody waiting.'}${one.next ? `\n\nNext: ${one.next.label}.` : ''}`,
+          cards: [{ type: 'graph', title: one.name, focus: [one.uid, ...one.signals.flatMap((x) => x.uids)].slice(0, 12) }, ...(one.next ? [{ type: 'options' as const, question: 'Do it?', options: [{ key: 'A', label: one.next.label, value: one.next.ask }] }] : [])],
+          data: [one],
+        };
+      }
       if (!rows.length) return { text: 'There are no customers in the graph yet.' };
       const k = (n: number) => `$${Math.round(n / 1000)}k`;
       const atRisk = rows.filter((r) => r.level === 'at risk');
@@ -990,14 +1002,14 @@ export const tools: Tool[] = [
   {
     name: 'rank_entities',
     description: 'Rank projects, systems, customers, people or teams by a graph count: open tickets, dependents (multi-hop DEPENDS_ON), customers exposed, or people. Answers "which project has the most open tickets?", "which system has the most dependents?".',
-    params: { type: 'object', properties: { label: { type: 'string', enum: ['Project', 'System', 'Org', 'Person', 'Team'] }, metric: { type: 'string', enum: ['open_tickets', 'dependents', 'customers', 'people'] } }, required: ['label', 'metric'] },
-    async run({ g }, { label, metric }) {
+    params: { type: 'object', properties: { label: { type: 'string', enum: ['Project', 'System', 'Org', 'Person', 'Team'] }, metric: { type: 'string', enum: ['open_tickets', 'dependents', 'customers', 'people', 'systems'] }, engineers: { type: 'boolean', description: 'people: engineering roles only' } }, required: ['label', 'metric'] },
+    async run({ g }, { label, metric, engineers }) {
       const Q: Record<string, Record<string, string>> = {
         open_tickets: {
           Project: `MATCH (x:Project) OPTIONAL MATCH (t:Ticket {status:'open'})-[:PART_OF]->(x) RETURN x.uid AS uid, x.name AS name, count(DISTINCT t) AS n, collect(DISTINCT t.key)[0..4] AS ex`,
           System: `MATCH (x:System) OPTIONAL MATCH (t:Ticket {status:'open'})-[:AFFECTS]->(x) RETURN x.uid AS uid, x.name AS name, count(DISTINCT t) AS n, collect(DISTINCT t.key)[0..4] AS ex`,
           Org: `MATCH (x:Org {kind:'customer'}) OPTIONAL MATCH (t:Ticket {status:'open'})-[:FOR]->(x) RETURN x.uid AS uid, x.name AS name, count(DISTINCT t) AS n, collect(DISTINCT t.key)[0..4] AS ex`,
-          Person: `MATCH (x:Person) WHERE NOT coalesce(x.external, false) OPTIONAL MATCH (t:Ticket {status:'open'})-[:ASSIGNED_TO]->(x) RETURN x.uid AS uid, x.name AS name, count(DISTINCT t) AS n, collect(DISTINCT t.key)[0..4] AS ex`,
+          Person: `MATCH (x:Person) WHERE NOT coalesce(x.external, false) AND NOT coalesce(x.me, false) OPTIONAL MATCH (t:Ticket {status:'open'})-[:ASSIGNED_TO]->(x) RETURN x.uid AS uid, x.name AS name, x.role AS role, count(DISTINCT t) AS n, collect(DISTINCT t.key)[0..4] AS ex`,
         },
         dependents: {
           System: `MATCH (x:System) OPTIONAL MATCH (d:System)-[:DEPENDS_ON*1..4]->(x) RETURN x.uid AS uid, x.name AS name, count(DISTINCT d) AS n, collect(DISTINCT d.name)[0..4] AS ex`,
@@ -1011,15 +1023,20 @@ export const tools: Tool[] = [
           Team: `MATCH (x:Team) OPTIONAL MATCH (p:Person)-[:MEMBER_OF]->(x) RETURN x.uid AS uid, x.name AS name, count(DISTINCT p) AS n, collect(DISTINCT p.name)[0..4] AS ex`,
           Org: `MATCH (x:Org) OPTIONAL MATCH (p:Person)-[:WORKS_AT]->(x) RETURN x.uid AS uid, x.name AS name, count(DISTINCT p) AS n, collect(DISTINCT p.name)[0..4] AS ex`,
         },
+        systems: {
+          Org: `MATCH (x:Org {kind:'customer'}) OPTIONAL MATCH (x)-[:USES]->(:System)-[:DEPENDS_ON*0..3]->(s:System) RETURN x.uid AS uid, x.name AS name, count(DISTINCT s) AS n, collect(DISTINCT s.name)[0..5] AS ex`,
+          Project: `MATCH (x:Project) OPTIONAL MATCH (x)-[:USES]->(s:System) RETURN x.uid AS uid, x.name AS name, count(DISTINCT s) AS n, collect(DISTINCT s.name)[0..5] AS ex`,
+        },
       };
       const q = Q[metric]?.[label];
       if (!q) return { text: `I can rank ${Object.entries(Q).map(([m, ls]) => `${Object.keys(ls).join('/')} by ${m.replace('_', ' ')}`).join('; ')}.` };
-      const rows = (await g.q(`${q} ORDER BY n DESC LIMIT 6`, {}, `rank ${label} by ${metric}`)).filter((r) => r.n > 0);
-      const what = metric.replace('_', ' ');
-      const noun = label === 'Org' ? 'customer' : label.toLowerCase();
+      const rows = (await g.q(`${q} ORDER BY n DESC LIMIT 40`, {}, `rank ${label} by ${metric}${engineers ? ' (engineers)' : ''}`))
+        .filter((r) => r.n > 0 && (!engineers || ENGINEERING.test(r.role || ''))).slice(0, 6);
+      const what = metric === 'systems' ? 'systems in use' : metric.replace('_', ' ');
+      const noun = label === 'Org' ? 'customer' : engineers ? 'engineer' : label.toLowerCase();
       if (!rows.length) return { text: `No ${noun} has any ${what} right now.` };
       return {
-        text: `**${rows[0].name}** has the most ${what} (${rows[0].n}).\n${rows.map((r, i) => `${i + 1}. **${r.name}** — ${r.n} ${r.n === 1 ? what.replace(/s$/, '') : what}${r.ex.length ? `: ${r.ex.join(', ')}` : ''}`).join('\n')}`,
+        text: `${rows.filter((r) => r.n === rows[0].n).length > 1 ? `It's a tie: ${rows.filter((r) => r.n === rows[0].n).map((r) => `**${r.name}**`).join(', ')} each have ${rows[0].n} ${rows[0].n === 1 ? what.replace(/s$/, '') : what}.` : `**${rows[0].name}** has the most ${what} (${rows[0].n}).`}\n${rows.map((r, i) => `${i + 1}. **${r.name}** — ${r.n} ${r.n === 1 ? what.replace(/s$/, '') : what}${r.ex.length ? `: ${r.ex.join(', ')}` : ''}`).join('\n')}`,
         cards: [{ type: 'graph', title: `${noun}s by ${what}`, focus: rows.slice(0, 4).map((r) => r.uid) }],
         data: rows,
       };
@@ -1100,7 +1117,7 @@ export const tools: Tool[] = [
         const everyone = (await toolByName('workload')!.run({ g } as any, {})).data as any[];
         const teamAvg = everyone.reduce((n, x) => n + x.load, 0) / Math.max(1, everyone.length);
         const a = await absenceImpact(g, r.uid);
-        const verdict = r.load > teamAvg * 1.6 && r.load >= 6 ? 'Yes — well above the team' : r.load > teamAvg ? 'A bit above the team' : 'No — at or below the team';
+        const verdict = r.load > teamAvg * 1.6 && r.load >= 6 ? `**${r.name} is carrying well above the team**` : r.load > teamAvg ? `**${r.name} is a bit above the team**` : `**${r.name} is at or below the team's load**`;
         return {
           text: `${verdict} (load ${r.load} vs team average ${teamAvg.toFixed(1)}).\n${line(r)}.${a?.orphaned.length ? `\nThey are also the only person who knows ${a.orphaned.map((s) => s.name).join(', ')}.` : ''}`,
           cards: [{ type: 'graph', title: `${r.name}'s load`, focus: [r.uid] }],
@@ -1191,10 +1208,28 @@ export const tools: Tool[] = [
     params: { type: 'object', properties: {
       label: { type: 'string', enum: ['Ticket', 'Project', 'System', 'Org', 'Decision', 'Person', 'Event', 'Doc', 'Team'] },
       status: { type: 'string' }, priority: { type: 'string' }, kind: { type: 'string' }, tier: { type: 'string' },
+      within: { type: 'string', description: 'optional: only those connected to this entity (people on a project, tickets on a system, systems a customer uses…)' },
     }, required: ['label'] },
-    async run({ g }, { label, status, priority, kind, tier }) {
+    async run({ g }, { label, status, priority, kind, tier, within }) {
       const where: string[] = [];
       const params: Record<string, unknown> = { now: Date.now() };
+      let scope = '';
+      let scopeName = '';
+      if (within) {
+        const w = await resolve(g, within);
+        if (!w) return { text: `I couldn't find "${within}".` };
+        const REL: Record<string, string> = {
+          'Person|Project': '(n)-[:WORKS_ON|OWNS]->(w)', 'Person|Team': '(n)-[:MEMBER_OF]->(w)', 'Person|Org': '(n)-[:WORKS_AT]->(w)', 'Person|System': '(n)<-[:ASSIGNED_TO]-(:Ticket)-[:AFFECTS]->(w)',
+          'Ticket|Project': '(n)-[:PART_OF]->(w)', 'Ticket|System': '(n)-[:AFFECTS]->(w)', 'Ticket|Person': '(n)-[:ASSIGNED_TO]->(w)', 'Ticket|Org': '(n)-[:FOR]->(w)',
+          'System|Org': '(w)-[:USES]->(n)', 'System|Project': '(w)-[:USES]->(n)', 'Decision|Project': '(n)-[:ABOUT]->(w)', 'Decision|System': '(n)-[:ABOUT]->(w)', 'Decision|Org': '(n)-[:ABOUT]->(w)',
+          'Event|Org': '(n)-[:ABOUT]->(w)', 'Event|Project': '(n)-[:ABOUT]->(w)', 'Event|Person': '(w)-[:ATTENDS]->(n)', 'Doc|System': '(n)-[:ABOUT]->(w)', 'Doc|Project': '(n)-[:ABOUT]->(w)', 'Project|Person': '(w)-[:WORKS_ON|OWNS]->(n)',
+        };
+        const pat = REL[`${label}|${w.label}`];
+        if (!pat) return { text: `I don't have a way to list ${label.toLowerCase()}s of a ${w.label.toLowerCase()} yet.` };
+        scope = `MATCH (w {uid:$w}) MATCH ${pat} WITH DISTINCT n `;
+        params.w = w.uid;
+        scopeName = w.name;
+      }
       if (status) { where.push('toLower(coalesce(n.status, "")) = $status'); params.status = String(status).toLowerCase(); }
       if (priority) { where.push('n.priority = $priority'); params.priority = String(priority).toUpperCase(); }
       if (kind) { where.push('n.kind = $kind'); params.kind = kind; }
@@ -1204,23 +1239,24 @@ export const tools: Tool[] = [
       const allowed = ['Ticket', 'Project', 'System', 'Org', 'Decision', 'Person', 'Event', 'Doc', 'Team'];
       if (!allowed.includes(label)) return { text: `I can list ${allowed.join(', ')}.` };
       const rows = await g.q(
-        `MATCH (n:${label}) ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
+        `${scope ? scope.replace('(n)', `(n:${label})`) : `MATCH (n:${label}) `}${where.length ? `WHERE ${where.join(' AND ')}` : ''}
          OPTIONAL MATCH (n)-[:ASSIGNED_TO|AWAITS]->(a:Person)
-         RETURN n.uid AS uid, coalesce(n.key, n.name, n.title) AS name, n.title AS title, n.status AS status, n.priority AS priority, n.kind AS kind, n.tier AS tier, n.arr AS arr, n.role AS role, n.start AS start, a.name AS owner
+         RETURN n.uid AS uid, coalesce(n.key, n.name, n.title) AS name, n.title AS title, n.status AS status, n.priority AS priority, n.kind AS kind, n.tier AS tier, n.arr AS arr, n.role AS role, n.start AS start, CASE WHEN coalesce(a.me, false) THEN 'waiting on you' ELSE a.name END AS owner
          ORDER BY coalesce(n.priority, 'Z'), coalesce(n.start, 0), name LIMIT 60`,
         params,
         `list ${label}${where.length ? ` where ${Object.entries({ status, priority, kind, tier }).filter(([, v]) => v).map(([k, v]) => `${k}=${v}`).join(', ')}` : ''}`,
       );
       const what = [status, priority, label === 'Org' ? (kind || 'org') : tier, label === 'Org' ? '' : label.toLowerCase()].filter(Boolean).join(' ');
+      const on = scopeName ? ` on ${scopeName}` : '';
       const plural = (n: number) => (n === 1 ? what : what.replace(/(y)$/, 'ie').replace(/(person)$/, 'people') + (what.endsWith('person') ? '' : 's'));
-      if (!rows.length) return { text: `There are no ${plural(0)} in the graph.` };
+      if (!rows.length) return { text: `There are no ${plural(0)}${on} in the graph.` };
       const arr = rows.reduce((n, r) => n + (r.arr || 0), 0);
       const line = (r: any) => {
-        const bits = [label === 'Ticket' && !priority ? r.priority : '', !status ? r.status : '', !tier ? r.tier : '', !kind ? r.kind : '', r.role, r.arr ? `$${Math.round(r.arr / 1000)}k ARR` : '', r.start ? when(r.start) : '', r.owner ? `→ ${r.owner}` : ''].filter(Boolean);
+        const bits = [label === 'Ticket' && !priority ? r.priority : '', !status ? r.status : '', !tier ? r.tier : '', !kind ? r.kind : '', r.role, r.arr ? `$${Math.round(r.arr / 1000)}k ARR` : '', r.start ? when(r.start) : '', r.owner ? (r.owner === 'waiting on you' ? r.owner : `→ ${r.owner}`) : ''].filter(Boolean);
         return `- **${r.name}**${r.title && r.title !== r.name ? ` — ${clip(r.title, 70)}` : ''}${bits.length ? ` (${bits.join(', ')})` : ''}`;
       };
       return {
-        text: `**${rows.length} ${plural(rows.length)}**${arr ? ` · $${Math.round(arr / 1000)}k ARR in total` : ''}:\n${rows.slice(0, 15).map(line).join('\n')}${rows.length > 15 ? `\n…and ${rows.length - 15} more.` : ''}`,
+        text: `**${rows.length} ${plural(rows.length)}${on}**${arr ? ` · $${Math.round(arr / 1000)}k ARR in total` : ''}:\n${rows.slice(0, 15).map(line).join('\n')}${rows.length > 15 ? `\n…and ${rows.length - 15} more.` : ''}`,
         cards: [{ type: 'graph', title: `${rows.length} ${plural(rows.length)}`, focus: rows.slice(0, 12).map((r) => r.uid) }],
         data: rows,
       };
@@ -1398,9 +1434,13 @@ async function weighOptions(g: UserGraph, decisionUid: string): Promise<string> 
   );
   const aboutProjects = await g.q(`MATCH (:Decision {uid:$u})-[:ABOUT]->(p:Project) RETURN p.uid AS uid, p.name AS name`, { u: decisionUid }, 'projects this decision is about');
   const lines: string[] = [];
+  const costs: { i: number; arr: number; slipped: number; waiting: number; why: string[] }[] = [];
+  // tickets this decision settles: other blockers are what still stand between a project and its date
+  const settles = new Set((await g.q(`MATCH (:Decision {uid:$u})-[:ABOUT]->(t:Ticket) RETURN t.uid AS uid`, { u: decisionUid }, '~tickets it settles')).map((r) => r.uid));
   for (const [i, opt] of options.entries()) {
     const low = opt.toLowerCase();
     const ents = mentionsIn(dict, opt);
+    const cost = { i, arr: 0, slipped: 0, waiting: 0, why: [] as string[] };
     // projects the option names, else the decision's projects it alludes to ("delay EU" → EU Launch), else all of them
     let projects = ents.filter((u) => u.startsWith('project:'));
     if (!projects.length) projects = aboutProjects.filter((p) => String(p.name).split(/\s+/).some((w: string) => new RegExp(`\\b${w.replace(/[^\w]/g, '')}\\b`, 'i').test(opt) && !/^(the|launch|raise|migration)$/i.test(w))).map((p) => p.uid);
@@ -1417,18 +1457,42 @@ async function weighOptions(g: UserGraph, decisionUid: string): Promise<string> 
         { p: projects },
         `what delaying "${clip(opt, 30)}" holds up`,
       );
-      for (const h of held) out.push(`${h.name} slips${h.downstream.length ? `, and with it ${h.downstream.join(', ')}` : ''}${h.waiting.length ? `; ${h.waiting.join(', ')} ${h.waiting.length > 1 ? 'are' : 'is'} waiting on a date` : ''}`);
+      for (const h of held) {
+        out.push(`${h.name} slips${h.downstream.length ? `, and with it ${h.downstream.join(', ')}` : ''}${h.waiting.length ? `; ${h.waiting.join(', ')} ${h.waiting.length > 1 ? 'are' : 'is'} waiting on a date` : ''}`);
+        cost.slipped += 1 + h.downstream.length;
+        cost.waiting += h.waiting.length;
+        cost.why.push(`${h.name} slips`);
+      }
     }
     if (/\b(drop|cancel|remove|stop|deprecate|end|sunset)\b/.test(low)) {
-      if (about.length) out.push(`hits ${about.map((o) => `${o.name}${o.arr ? ` ($${Math.round(o.arr / 1000)}k ARR)` : ''}`).join(', ')}, who this decision is about`);
-      const ontime = projects.filter(Boolean);
-      if (/on time|as planned/.test(low) && ontime.length) out.push(`keeps ${(await g.q(`UNWIND $p AS u MATCH (x:Project {uid:u}) RETURN x.name AS n`, { p: ontime }, '~names')).map((r) => r.n).join(', ')} on schedule`);
+      if (about.length) {
+        out.push(`hits ${about.map((o) => `${o.name}${o.arr ? ` ($${Math.round(o.arr / 1000)}k ARR)` : ''}`).join(', ')}, who this decision is about`);
+        cost.arr += about.reduce((n, o) => n + o.arr, 0);
+        cost.why.push(`risks ${about.map((o) => o.name).join(', ')}`);
+      }
+      if (/on time|as planned/.test(low)) {
+        // only claim "on schedule" if nothing else stands in the way (critical path, minus what this decision settles)
+        for (const pu of projects) {
+          const cp = await criticalPath(g, pu);
+          if (!cp) continue;
+          const others = cp.blockers.filter((b) => b.uid !== decisionUid && !settles.has(b.uid));
+          out.push(others.length ? `clears this blocker for ${cp.project.name}, which still has ${others.slice(0, 3).map((b) => b.key || b.title).join(', ')} open` : `keeps ${cp.project.name} on schedule`);
+        }
+      }
     }
     if (/\b(confirm|lock|ship|go with|approve)\b/.test(low) && projects.length) {
       const owners = await g.q(`UNWIND $p AS u MATCH (x:Project {uid:u})<-[:OWNS|WORKS_ON]-(p:Person) RETURN collect(DISTINCT p.name) AS n`, { p: projects }, 'who to tell');
       if (owners[0]?.n.length) out.push(`tell ${owners[0].n.join(', ')}`);
     }
     lines.push(`**${String.fromCharCode(65 + i)}. ${opt}** — ${out.length ? out.join('; ') : 'nothing else in the graph depends on it'}.`);
+    costs.push(cost);
   }
-  return `**Your options, weighed on the graph**\n${lines.join('\n')}`;
+  // a lean, from the graph alone: revenue at risk (per $10k) against projects slipping and people kept waiting
+  const score = (c: typeof costs[number]) => c.arr / 10_000 + 6 * c.slipped + 1.5 * c.waiting;
+  const ranked = [...costs].sort((a, b) => score(a) - score(b));
+  const lean = ranked[0];
+  const leanText = costs.length > 1 && score(ranked[1]) > score(lean)
+    ? `\n\n**The graph leans ${String.fromCharCode(65 + lean.i)}** — it costs less of what the graph can see (${ranked.slice(1).map((c) => `${String.fromCharCode(65 + c.i)} ${c.why.join(' and ') || 'carries more'}`).join('; ')}). It can't see everything — the call is yours.`
+    : '';
+  return `**Your options, weighed on the graph**\n${lines.join('\n')}${leanText}`;
 }

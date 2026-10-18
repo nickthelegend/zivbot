@@ -115,7 +115,7 @@ export function GraphView() {
         <div className="graph-side">
           {selected ? (
             <div className="node-detail">
-              <div className="nd-head"><span className="chip-dot" style={{ background: labels[selected.label]?.color }} /> {selected.label}<button className="icon-btn" onClick={() => setSelected(null)}><Icon.close size={15} /></button></div>
+              <div className="nd-head"><span className="chip-dot" style={{ background: labels[selected.label]?.color }} /> {selected.label}<button aria-label="Close" className="icon-btn" onClick={() => setSelected(null)}><Icon.close size={15} /></button></div>
               <h3>{selected.name}</h3>
               <div className="nd-body">{detail ? detail.split('\n').slice(1).filter((l) => l.trim()).map((l, i) => <div key={i}>{l.replace(/\*\*/g, '').replace(/^- /, '')}</div>) : <span className="spinner sm" />}</div>
               <div className="nd-actions">

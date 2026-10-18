@@ -27,7 +27,7 @@ export function PairModal() {
   return (
     <div className="modal-backdrop" onClick={() => setOpen(false)}>
       <div className="modal pair-modal" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-head"><h2><Icon.phone size={18} /> Pair your phone</h2><button className="icon-btn" onClick={() => setOpen(false)}><Icon.close size={18} /></button></div>
+        <div className="modal-head"><h2><Icon.phone size={18} /> Pair your phone</h2><button aria-label="Close" className="icon-btn" onClick={() => setOpen(false)}><Icon.close size={18} /></button></div>
         <div className="modal-body pair-body">
           {qr && <img className="pair-qr" src={qr} width={240} height={240} alt="Pairing QR code" />}
           <div className="muted">Open the ZivBot app on Android and scan this, or paste the link. Your phone talks to the dots on this computer over your Wi-Fi — same graph, same memory.</div>

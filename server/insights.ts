@@ -1,4 +1,5 @@
 import { config } from './config.ts';
+import { currentTrace } from './graph.ts';
 import type { UserGraph } from './graph.ts';
 import { DAY } from './util.ts';
 import { absenceImpact } from './absence.ts';
@@ -16,7 +17,19 @@ import { findDuplicates } from './identity.ts';
 export type InsightItem = { title: string; detail: string; uids: string[]; severity: 'high' | 'medium' | 'low'; ask?: string };
 export type InsightSection = { key: string; title: string; blurb: string; items: InsightItem[] };
 
-export async function insights(g: UserGraph, since = Date.now() - DAY): Promise<InsightSection[]> {
+// one Insights pass runs a few hundred small queries (it simulates every person being out); reuse it briefly
+const recent = new Map<string, { at: number; v: Promise<InsightSection[]> }>();
+export function insights(g: UserGraph, since = Date.now() - DAY): Promise<InsightSection[]> {
+  if (currentTrace()) return insightsNow(g, since); // a traced answer shows its own queries
+  const hit = recent.get(g.name);
+  if (hit && Date.now() - hit.at < 20_000) return hit.v;
+  const v = insightsNow(g, since);
+  recent.set(g.name, { at: Date.now(), v });
+  v.catch(() => recent.delete(g.name));
+  return v;
+}
+
+async function insightsNow(g: UserGraph, since: number): Promise<InsightSection[]> {
   const [bus, spof, groups, load, waiting, changed, fleet, dups, stale, absence, customers, blocked] = await Promise.all([
     busFactor(g), singlePoints(g), workingGroups(g), overloaded(g), waitingOnYou(g), whatChanged(g, since), fleetHealth(g), duplicates(g), staleKnowledge(g), keyPeopleAbsence(g), customersAtRisk(g), blockedWork(g),
   ]);
@@ -233,8 +246,9 @@ async function whatChanged(g: UserGraph, since: number): Promise<InsightSection>
     // source time (when it was sent, filed, decided), not when we synced it — a first import isn't news
     `MATCH (n:Searchable) WHERE n.at > $since AND n.at <= $now AND (n:Email OR n:ChatMessage OR n:Ticket OR n:Decision OR n:Doc OR n:Run OR n:Fact)
      AND NOT coalesce(n.newsletter, false)
-     WITH [l IN labels(n) WHERE NOT l IN ['Searchable', 'Memorable']][0] AS label, collect(n.uid) AS uids
-     RETURN label, size(uids) AS n, uids[0..8] AS sample ORDER BY n DESC`,
+     WITH n ORDER BY n.at DESC
+     WITH [l IN labels(n) WHERE NOT l IN ['Searchable', 'Memorable']][0] AS label, collect(n.uid) AS uids, collect(coalesce(n.subject, n.title, n.text, n.name)) AS names
+     RETURN label, size(uids) AS n, uids[0..8] AS sample, names[0..3] AS names ORDER BY n DESC`,
     { since, now: Date.now() },
     'new activity since (by source time)',
   );
@@ -248,7 +262,7 @@ async function whatChanged(g: UserGraph, since: number): Promise<InsightSection>
   );
   const a = acted[0] || { decided: [], runs: [], wins: 0, approved: 0 };
   const plural = (l: string, n: number) => (n === 1 ? l : l === 'Person' ? 'People' : l.endsWith('s') ? `${l}es` : `${l}s`);
-  const items: InsightItem[] = rows.slice(0, 5).map((r) => ({ title: `+${r.n} ${plural(r.label, r.n)}`, detail: 'In the last 24 hours', uids: r.sample, severity: 'low' }));
+  const items: InsightItem[] = rows.slice(0, 5).map((r) => ({ title: `+${r.n} ${plural(r.label, r.n)}`, detail: (r.names as string[]).map((x) => `“${String(x).replace(/\s+/g, ' ').slice(0, 60)}”`).join(', ') || 'In the last 24 hours', uids: r.sample, severity: 'low' }));
   const rest = rows.slice(5);
   if (rest.length) items.push({ title: `+${rest.reduce((n, r) => n + r.n, 0)} more`, detail: rest.map((r) => `${r.n} ${plural(r.label, r.n)}`).join(', '), uids: [], severity: 'low' });
   if (a.runs.length) items.unshift({ title: `${a.wins}/${a.runs.length} agent runs succeeded`, detail: `${a.approved} approval${a.approved === 1 ? '' : 's'} and ${a.decided.length} decision${a.decided.length === 1 ? '' : 's'} since yesterday.`, uids: [...a.runs, ...a.decided], severity: 'low' });

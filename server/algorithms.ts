@@ -1,4 +1,5 @@
 import type { UserGraph } from './graph.ts';
+import { aliasMap } from './knowledge.ts';
 
 /**
  * FalkorDB's graph algorithms as agent tools. Everything is allow-listed:
@@ -47,9 +48,16 @@ export async function runAlgorithm(g: UserGraph, a: AlgoArgs): Promise<AlgoResul
   const limit = Math.min(a.limit ?? 12, 50);
   const base = { algorithm: a.algorithm, title: meta.title, what: meta.what, label: L, rel: R };
 
+  // people rankings are about colleagues and contacts: not newsletters, vendor inboxes, chat handles or me
+  const skip = L === 'Person'
+    ? new Set([
+      ...(await g.q(`MATCH (p:Person) WHERE p.role IN ['Newsletter', 'Vendor', 'Slack member'] OR coalesce(p.me, false) RETURN p.uid AS uid`, {}, '~not people to rank')).map((r) => r.uid as string),
+      ...(await aliasMap(g)).keys(),
+    ])
+    : new Set<string>();
   const ranked = async (cypher: string, labelText: string) => {
-    const rows = await g.q(cypher, { limit }, labelText);
-    return rows.filter((r) => r.uid);
+    const rows = await g.q(cypher, { limit: limit + skip.size }, labelText);
+    return rows.filter((r) => r.uid && !skip.has(r.uid) && !(typeof r.score === 'number' && r.score === 0 && a.algorithm !== 'pagerank')).slice(0, limit);
   };
 
   switch (a.algorithm) {
@@ -66,7 +74,7 @@ export async function runAlgorithm(g: UserGraph, a: AlgoArgs): Promise<AlgoResul
       return { ...base, rows, summary: `${rows[0]?.name ?? 'Nothing'} is closest to everything else.` };
     }
     case 'communities': {
-      const rows = await g.q(`CALL algo.labelPropagation({nodeLabels: ['${L}'], relationshipTypes: ['${R}']}) YIELD node, communityId RETURN ${nodeOut}, communityId AS grp ORDER BY grp`, {}, `label propagation over ${L}/${R}`);
+      const rows = (await g.q(`CALL algo.labelPropagation({nodeLabels: ['${L}'], relationshipTypes: ['${R}']}) YIELD node, communityId RETURN ${nodeOut}, communityId AS grp ORDER BY grp`, {}, `label propagation over ${L}/${R}`)).filter((r) => !skip.has(r.uid));
       const groups = new Map<number, number>();
       rows.forEach((r) => groups.set(r.grp, (groups.get(r.grp) || 0) + 1));
       const big = [...groups.entries()].filter(([, n]) => n > 1).length;

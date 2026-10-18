@@ -30,7 +30,7 @@ export function ConnectModal() {
             <span className="icon-stack">{connected.slice(0, 3).map((c) => <AppIcon key={c.id} slug={c.icon} size={18} />)}</span>
             {connected.length} connected <Icon.chevron size={14} />
           </span>
-          <button className="icon-btn" onClick={() => set({ connectOpen: false })}><Icon.close size={18} /></button>
+          <button aria-label="Close" className="icon-btn" onClick={() => set({ connectOpen: false })}><Icon.close size={18} /></button>
         </div>
         <div className="modal-search">
           <div className="search-box"><Icon.search size={16} /><input autoFocus placeholder="Search across apps and skills" value={q} onChange={(e) => setQ(e.target.value)} /></div>

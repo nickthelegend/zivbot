@@ -32,9 +32,9 @@ export function Sidebar() {
           {graph && <button className="graph-pulse" title={`Your FalkorDB graph · ${graph.nodes} nodes · ${graph.edges} edges`} onClick={() => set({ view: 'graph', mobileList: false })}><i />{graph.nodes >= 1000 ? `${(graph.nodes / 1000).toFixed(1)}k` : graph.nodes}</button>}
         </div>
         <div className="side-actions">
-          <button className="icon-btn round" onClick={() => set({ paletteOpen: true })} title="Search (⌘K)"><Icon.search size={17} /></button>
+          <button aria-label="Search (⌘K)" className="icon-btn round" onClick={() => set({ paletteOpen: true })} title="Search (⌘K)"><Icon.search size={17} /></button>
           <div className="menu-anchor">
-            <button className="icon-btn round" onClick={() => setMenu(menu === 'new' ? null : 'new')} title="New"><Icon.plus size={17} /></button>
+            <button aria-label="New" className="icon-btn round" onClick={() => setMenu(menu === 'new' ? null : 'new')} title="New"><Icon.plus size={17} /></button>
             {menu === 'new' && (
               <div className="menu down" onMouseLeave={() => setMenu(null)}>
                 <button onClick={() => go({ newDotOpen: true })}><Icon.plus size={15} /> New dot</button>

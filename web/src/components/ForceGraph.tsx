@@ -86,7 +86,18 @@ export function ForceGraph({
         ctx.arc(n.x!, n.y!, n.r, 0, Math.PI * 2);
         ctx.fillStyle = n.color;
         ctx.fill();
-        if (n.focus || n.id === selected || n === hover) {
+        if (n.id === selected) {
+          // the selected node: an ember ring and a soft halo, visible at any zoom
+          ctx.lineWidth = 3 / k;
+          ctx.strokeStyle = '#ff8a3d';
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.arc(n.x!, n.y!, n.r + 7 / k, 0, Math.PI * 2);
+          ctx.strokeStyle = 'rgba(255,138,61,0.35)';
+          ctx.lineWidth = 4 / k;
+          ctx.stroke();
+          ctx.lineWidth = 1 / k;
+        } else if (n.focus || n === hover) {
           ctx.lineWidth = 2 / k;
           ctx.strokeStyle = fg;
           ctx.stroke();
