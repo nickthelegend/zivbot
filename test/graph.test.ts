@@ -273,3 +273,22 @@ test('who could learn: a second person for a system only one person knows, never
   assert.ok(d.candidates.length > 0);
   assert.ok(!d.candidates.some((c: any) => d.knowers.includes(c.uid)));
 });
+
+test('memory can be corrected: a retracted fact stops being used but stays as history', async () => {
+  await run('remember', { text: 'Raj is on leave from Oct 26' });
+  const r = await run('forget', { text: "Raj's leave got cancelled" });
+  assert.match(r.text, /stopped using/);
+  const rows = await g.q(`MATCH (f:Fact) WHERE f.text CONTAINS 'leave' RETURN f.status AS s`);
+  assert.deepEqual(rows.map((x) => x.s), ['retracted']);
+});
+
+test('counting and listing with filters: open tickets older than two weeks', async () => {
+  const rows = (await run('list_entities', { label: 'Ticket', status: 'open', olderThanDays: 14 })).data as any[];
+  assert.deepEqual(rows.map((r) => r.name), ['LUM-139']);
+});
+
+test('a meeting is booked at the time asked, not the first free slot', async () => {
+  const start = new Date(Date.now() + 3 * 86_400_000); start.setHours(14, 0, 0, 0);
+  const r = await run('propose_event', { title: 'Call with Hana', attendees: ['Hana Kim'], start: start.toISOString(), minutes: 30 });
+  assert.match(r.text, /the time you asked|overlaps/);
+});

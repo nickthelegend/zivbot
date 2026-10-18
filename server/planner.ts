@@ -1,7 +1,7 @@
 import type { UserGraph, Row } from './graph.ts';
 import { loadDictionary, mentionsIn } from './ingest.ts';
 import { toolByName, search, type Card, type Ctx, type ToolResult } from './tools.ts';
-import { ago, when } from './util.ts';
+import { ago, when, clip as clipText, DAY } from './util.ts';
 import { criticalPath } from './blockers.ts';
 import { config } from './config.ts';
 import { rankOwners } from './absence.ts';
@@ -131,6 +131,171 @@ export async function plan(ctx: Ctx, input: string, opts: PlanOpts = {}): Promis
   if (/^(remember|note( that)?|from now on|always|never|i prefer|prefer|keep in mind)\b/i.test(t)) {
     const r = await call('remember', { text: t.replace(/^(remember( that)?|note( that)?|keep in mind( that)?)[:,]?\s*/i, '') });
     return done(`Got it. ${r.text}`);
+  }
+
+  // ---- quick facts the graph holds directly ----------------------------------------------
+  // "when is the Brightwave QBR?" — a named meeting
+  if (/^when\b|\bwhat time\b/.test(low) && !first('Project') && !/\b(leave|out|off|away|holiday|vacation|renew\w*)\b/.test(low)) {
+    const ev = (await search(ctx.g, t.replace(/\b(when|is|the|what|time|our|my|next)\b/gi, ' '), ['Event'], 3)).filter((h: Row) => h.score >= 1)[0];
+    if (ev) {
+      const e = await ctx.g.one(`MATCH (e:Event {uid:$u}) OPTIONAL MATCH (p:Person)-[:ATTENDS]->(e) WHERE NOT coalesce(p.me, false) RETURN coalesce(e.title, e.name) AS title, e.start AS start, e.end AS end, collect(p.name) AS who`, { u: ev.uid }, 'that meeting');
+      if (e) { cards.push({ type: 'graph', title: e.title, focus: [ev.uid] }); return done(`**${e.title}** is ${when(e.start)}${e.end ? ` (${Math.round((e.end - e.start) / 60000)} min)` : ''}${e.who.length ? ` with ${e.who.join(', ')}` : ''}.`); }
+    }
+  }
+  // "who reported LUM-139?", "who owns LUM-142?"
+  const tk = t.match(/\b([A-Z]{2,6}-\d+)\b/i)?.[1]?.toUpperCase();
+  if (tk && /^who\b.*\b(report|raise|file|open|own|assign|work)/.test(low)) {
+    const r = await ctx.g.one(`MATCH (t:Ticket {key:$k}) OPTIONAL MATCH (t)-[:REPORTED_BY]->(r:Person) OPTIONAL MATCH (t)-[:ASSIGNED_TO]->(a:Person) RETURN t.title AS title, t.status AS status, t.priority AS priority, r.name AS reporter, a.name AS owner, t.at AS at`, { k: tk }, 'who is on the ticket');
+    if (r) return done(`**${tk}** (${r.priority}, ${r.status}) — ${r.title}.\n- Reported by **${r.reporter || 'unknown'}** ${ago(r.at)}\n- Owned by **${r.owner || 'nobody'}**`);
+  }
+  // "what's Tom working on?"
+  const doing = low.match(/\bwhat(?:'s| is| are)\s+(.+?)\s+(working on|doing|up to|busy with)\b/);
+  if (doing && first('Person')) {
+    const who = first('Person')!;
+    const r = await ctx.g.one(
+      `MATCH (p:Person {uid:$u})
+       OPTIONAL MATCH (p)<-[:ASSIGNED_TO]-(t:Ticket {status:'open'})
+       WITH p, collect(DISTINCT t.key + ' ' + t.title) AS tickets
+       OPTIONAL MATCH (p)-[:WORKS_ON|OWNS]->(pr:Project)
+       WITH p, tickets, collect(DISTINCT pr.name) AS projects
+       OPTIONAL MATCH (p)-[:ATTENDS]->(e:Event) WHERE e.start > $now
+       WITH p, tickets, projects, collect(DISTINCT coalesce(e.title, e.name))[0..3] AS meetings
+       OPTIONAL MATCH (p)-[:POSTED]->(m:ChatMessage)
+       WITH p, tickets, projects, meetings, m ORDER BY m.at DESC
+       RETURN p.name AS name, p.role AS role, tickets, projects, meetings, collect(m.text)[0..1] AS said`,
+      { u: who.uid, now: Date.now() },
+      'what they are working on',
+    );
+    if (r) return done(`**${r.name}**${r.role ? ` (${r.role})` : ''}:\n- Open tickets: ${r.tickets.join('; ') || 'none'}\n- Projects: ${r.projects.join(', ') || 'none'}\n- Coming up: ${r.meetings.join(', ') || 'no meetings'}${r.said[0] ? `\n- Last said in chat: “${clipText(r.said[0], 120)}”` : ''}`);
+  }
+  // "Brightwave ARR", "how much is Kestrel worth?"
+  if (/\b(arr|revenue|worth|pay us|paying|contract value)\b/.test(low) && first('Org') && !first('System')) {
+    const o = await ctx.g.one(`MATCH (o:Org {uid:$u}) OPTIONAL MATCH (x:Org {kind:'customer'}) RETURN o.name AS name, coalesce(o.arr, 0) AS arr, o.kind AS kind, o.tier AS tier, sum(coalesce(x.arr, 0)) AS total`, { u: first('Org')!.uid }, 'their ARR and the total');
+    if (o) return done(o.arr ? `**${o.name}**: $${Math.round(o.arr / 1000)}k ARR${o.tier ? ` (${o.tier})` : ''} — ${Math.round((100 * o.arr) / Math.max(1, o.total))}% of your $${Math.round(o.total / 1000)}k total.` : `${o.name} is a ${o.kind || 'company'} in the graph, with no ARR recorded.`);
+  }
+  // "who at Brightwave should I contact?"
+  if (/\bwho at\b|\bcontacts? (at|for)\b|\bwho (should i|do i|to) (contact|call|reach)\b/.test(low) && first('Org')) {
+    const o = first('Org')!;
+    const rows = await ctx.g.q(
+      `MATCH (p:Person)-[:WORKS_AT]->(o:Org {uid:$u}) OPTIONAL MATCH (p)<-[:FROM]-(e:Email)
+       RETURN p.uid AS uid, p.name AS name, p.role AS role, count(e) AS emails, max(e.at) AS last ORDER BY emails DESC`,
+      { u: o.uid },
+      'their people and how often they write',
+    );
+    const ours = await ctx.g.q(`MATCH (o:Org {uid:$u})<-[:FOR]-(:Ticket)-[:ASSIGNED_TO]->(p:Person) RETURN DISTINCT p.name AS name`, { u: o.uid }, 'who on our side works their tickets');
+    if (rows.length) return done(`Contact **${rows[0].name}**${rows[0].role ? ` (${rows[0].role})` : ''} — ${rows[0].emails} email${rows[0].emails === 1 ? '' : 's'} from them${rows[0].last ? `, last ${ago(rows[0].last)}` : ''}.${rows.length > 1 ? `\nAlso there: ${rows.slice(1).map((r) => r.name).join(', ')}.` : ''}${ours.length ? `\nOn our side, ${ours.map((r) => r.name).join(', ')} work${ours.length === 1 ? 's' : ''} their tickets.` : ''}`);
+  }
+  // "do I have meetings with Marcus this week?"
+  if (/\bmeetings?\b.*\bwith\b/.test(low) && first('Person') && !/\b(book|schedule|set up|arrange)\b/.test(low)) {
+    const who = first('Person')!;
+    const days = /\btoday\b/.test(low) ? 1 : /\btomorrow\b/.test(low) ? 2 : 7;
+    const rows = await ctx.g.q(`MATCH (:Person {me:true})-[:ATTENDS]->(e:Event)<-[:ATTENDS]-(:Person {uid:$u}) WHERE e.start > $now AND e.start < $until RETURN coalesce(e.title, e.name) AS title, e.start AS start ORDER BY e.start`, { u: who.uid, now: Date.now(), until: Date.now() + days * DAY }, 'meetings you share with them');
+    const name = (await ctx.g.one(`MATCH (p:Person {uid:$u}) RETURN p.name AS n`, { u: who.uid }))?.n;
+    return done(rows.length ? `**Yes** — ${rows.length} with ${name}:\n${rows.map((r) => `- ${when(r.start)} — ${r.title}`).join('\n')}` : `**No** — no meetings with ${name} in the next ${days === 7 ? 'week' : days === 2 ? 'two days' : 'day'}.`);
+  }
+
+  // "what's due this week?" — meetings, decisions waiting, P1s, in one list
+  if (/\b(due|deadlines?|on my plate this week|coming up this week|this week'?s)\b/.test(low) && !ents.length) {
+    const ev = await ctx.g.q(`MATCH (:Person {me:true})-[:ATTENDS]->(e:Event) WHERE e.start > $now AND e.start < $week RETURN coalesce(e.title, e.name) AS title, e.start AS start ORDER BY e.start`, { now: Date.now(), week: Date.now() + 7 * DAY }, 'meetings this week');
+    const dec = await ctx.g.q(`MATCH (d:Decision {status:'pending'})-[:AWAITS]->(:Person {me:true}) RETURN d.text AS text`, {}, 'decisions waiting on me');
+    const p1 = await ctx.g.q(`MATCH (t:Ticket {status:'open', priority:'P1'}) OPTIONAL MATCH (t)-[:ASSIGNED_TO]->(a:Person) RETURN t.key AS key, t.title AS title, a.name AS who`, {}, 'open P1s');
+    const asks = await ctx.g.q(`MATCH (e:Email)-[:IN_THREAD]->(th:Thread {awaitingReply:true}) WHERE e.body CONTAINS 'by ' OR e.body CONTAINS 'before ' WITH th, max(e.at) AS at MATCH (th)<-[:IN_THREAD]-(e:Email)-[:FROM]->(p:Person) WHERE e.at = at RETURN p.name AS who, th.subject AS subject, e.body AS body`, {}, 'asks with a deadline in them');
+    return done(`**This week**\n\n**Decisions you owe:** ${dec.map((d) => d.text).join('; ') || 'none'}\n\n**Open P1s:** ${p1.map((x) => `${x.key} (${x.who || 'unowned'})`).join(', ') || 'none'}\n\n**Asks with a deadline:**\n${asks.map((a) => `- ${a.who}: “${clipText(String(a.body).match(/[^.]*\b(by|before)\b[^.]*\./i)?.[0] || a.subject, 110)}”`).join('\n') || '- none'}\n\n**Meetings:**\n${ev.map((e) => `- ${when(e.start)} — ${e.title}`).join('\n') || '- none'}`);
+  }
+  // "what happened yesterday?"
+  if (/\bwhat (happened|changed)\b|\brecap\b|\bwhat did i miss\b/.test(low) && !ents.length) {
+    return done(`Here's what happened in your graph:\n\n${(await call('insights', { focus: 'changed' })).text}`);
+  }
+  // "which docs are out of date?"
+  if (/\b(out of date|outdated|stale|old|need(s)? updating)\b/.test(low) && /\b(docs?|documents?|runbooks?|documentation|knowledge|wiki|rfcs?)\b/.test(low)) {
+    return done(`Docs written before the latest incidents on their systems:\n\n${(await call('insights', { focus: 'stale' })).text}`);
+  }
+  // "which systems have no owner?"
+  if (/\b(systems?|services?)\b.*\b(no|without an?|missing an?|un)\s*owners?\b|\bunowned\b|\borphan(ed)?\b/.test(low)) {
+    const all = await ctx.g.q(`MATCH (s:System) RETURN s.uid AS uid, s.name AS name, s.tier AS tier`, {}, 'all systems');
+    const { knowersAll } = await import('./knowledge.ts');
+    const k = await knowersAll(ctx.g);
+    const none = all.filter((x) => !(k.get(x.uid) || []).length);
+    const one = all.filter((x) => (k.get(x.uid) || []).length === 1);
+    return done(`${none.length ? `**Nobody has done hands-on work on:** ${none.map((x) => `${x.name}${x.tier ? ` (${x.tier})` : ''}`).join(', ')}.` : 'Every system has at least one person with hands-on work on it.'}${one.length ? `\n\n**Only one person:** ${one.map((x) => `${x.name} → ${k.get(x.uid)![0].name}`).join('; ')}.` : ''}`);
+  }
+  // "what's our riskiest system?"
+  if (/\b(riskiest|most critical|weakest|most fragile|biggest risk)\b.*\b(system|service)\b|\b(system|service)\b.*\b(riskiest|most at risk)\b/.test(low)) {
+    const r = (await call('insights', { focus: 'spof' })).data as any[];
+    const top = r?.[0]?.items?.[0];
+    return done(top ? `**${top.title.split(' holds')[0]}** — ${top.title.replace(/^\S+\s/, '')}. ${top.detail}\n\nAsk "what breaks if ${top.title.split(' ')[0]} goes down?" for the full blast radius.` : 'No system stands out.');
+  }
+  // "has anyone committed to payments-api recently?"
+  if (/\b(commit(ted|s)?|pushed|changed the code|touched the code)\b/.test(low) && first('System', 'Repo')) {
+    const x = first('System', 'Repo')!;
+    const rows = await ctx.g.q(
+      `MATCH (x {uid:$u}) MATCH (c:Commit)-[:TOUCHES]->(f:File)-[:IN_REPO]->(r:Repo) WHERE r = x OR (r)-[:IMPLEMENTS]->(x)
+       OPTIONAL MATCH (c)-[:AUTHORED_BY]->(p:Person)
+       RETURN DISTINCT c.uid AS uid, c.name AS msg, c.at AS at, p.name AS who ORDER BY at DESC LIMIT 5`,
+      { u: x.uid },
+      'recent commits on it',
+    );
+    return done(rows.length ? `**Yes** — latest commits:\n${rows.map((r) => `- ${ago(r.at)} · **${r.who || 'unknown'}** — ${clipText(r.msg, 80)}`).join('\n')}` : 'No commits on it in the graph — its repo may not be connected.');
+  }
+  // "is the Stripe cutover date locked?"
+  if (/\b(locked|decided|confirmed|final|settled|signed off|approved)\b/.test(low) && /^(is|has|have|did|was)\b/.test(low)) {
+    const ds = await ctx.g.q(`MATCH (d:Decision) RETURN d.uid AS uid, coalesce(d.text, d.name) AS text, d.status AS status, d.choice AS choice, d.at AS at`, {}, 'decisions');
+    const words = low.split(/\W+/).filter((w) => w.length > 4 && !/(locked|decided|confirmed|final|settled|approved)/.test(w));
+    const hit = ds.map((d) => ({ ...d, n: words.filter((w) => String(d.text).toLowerCase().includes(w)).length })).filter((d) => d.n > 0).sort((a, b) => b.n - a.n)[0];
+    if (hit) return done(hit.status === 'pending' ? `**No — it's still open.** “${hit.text}” is waiting on you (raised ${ago(hit.at)}). Say "help me decide: ${hit.text}" to see the options weighed.` : `**Yes.** “${hit.text}” was decided${hit.choice ? ` → ${hit.choice}` : ''} (${ago(hit.at)}).`);
+  }
+  // "which emails haven't I replied to?"
+  if (/\b(haven'?t|not|never) (i )?(replied|answered|responded)|\bunreplied\b|\bunanswered\b|\bneed(s)? (a )?(reply|response)\b/.test(low)) {
+    return done((await call('insights', { focus: 'waiting' })).text);
+  }
+  // "is Dev on the critical path?"
+  if (/\bcritical path\b/.test(low) && first('Person')) {
+    const who = first('Person')!;
+    const projects = await ctx.g.q(`MATCH (p:Project) WHERE p.status <> 'planned' RETURN p.uid AS uid`, {}, 'projects in flight');
+    const hits: string[] = [];
+    const name = (await ctx.g.one(`MATCH (p:Person {uid:$u}) RETURN p.name AS n`, { u: who.uid }))?.n;
+    for (const pr of projects) {
+      const c = (await call('critical_path', { project: pr.uid })).data as any;
+      for (const b of c?.blockers || []) if (b.ownerUid === who.uid) hits.push(`${c.project.name} — ${b.kind === 'decision' ? `decision “${b.title}”` : `${b.key} ${b.priority || ''}`}`);
+    }
+    cards.length = 0;
+    return done(hits.length ? `**Yes** — ${name} owns blockers on:\n${hits.map((h) => `- ${h}`).join('\n')}` : `**No** — ${name} owns nothing that blocks a project right now.`);
+  }
+  // "which P1 is older?" / "oldest open ticket"
+  if (/\b(older|oldest|longest open|been open longest)\b/.test(low) && /\b(p[123]s?|tickets?|issues?|incidents?)\b/.test(low)) {
+    const pr = low.match(/\bp([123])\b/)?.[1];
+    const rows = await ctx.g.q(`MATCH (t:Ticket {status:'open'}) WHERE $p = '' OR t.priority = $p OPTIONAL MATCH (t)-[:ASSIGNED_TO]->(a:Person) RETURN t.key AS key, t.title AS title, t.priority AS priority, t.at AS at, a.name AS who ORDER BY t.at ASC LIMIT 5`, { p: pr ? `P${pr}` : '' }, 'open tickets, oldest first');
+    return done(rows.length ? `**${rows[0].key}** is the oldest — open ${Math.round((Date.now() - rows[0].at) / DAY)} days (${rows[0].title}).\n${rows.slice(1).map((r) => `- ${r.key} ${r.priority} — ${Math.round((Date.now() - r.at) / DAY)}d, ${r.who || 'unowned'}`).join('\n')}` : 'No open tickets match.');
+  }
+  // "what if Hana and Raj are both out?"
+  if (/\b(both|together|and)\b.*\b(out|leave|away|off|quit)\b/.test(low) && ents.filter((e) => e.label === 'Person').length >= 2) {
+    const ps = ents.filter((e) => e.label === 'Person').slice(0, 3);
+    const { knowersAll } = await import('./knowledge.ts');
+    const k = await knowersAll(ctx.g);
+    const out = new Set(ps.map((p) => p.uid));
+    const sys = await ctx.g.q(`MATCH (s:System) RETURN s.uid AS uid, s.name AS name, s.tier AS tier`, {}, 'systems');
+    const orphan = sys.filter((x) => { const ks = k.get(x.uid) || []; return ks.length && ks.every((kk) => out.has(kk.uid)); });
+    const tix = await ctx.g.q(`MATCH (t:Ticket {status:'open'})-[:ASSIGNED_TO]->(p:Person) WHERE p.uid IN $u RETURN t.key AS key, t.priority AS pr, p.name AS who`, { u: [...out] }, 'their open tickets');
+    const names = (await ctx.g.q(`UNWIND $u AS x MATCH (p:Person {uid:x}) RETURN p.name AS n`, { u: [...out] })).map((r) => r.n);
+    cards.push({ type: 'graph', title: `Without ${names.join(' and ')}`, focus: [...out, ...orphan.map((o) => o.uid)] });
+    return done(`If **${names.join(' and ')}** are both out:\n- **Nobody left who knows:** ${orphan.map((o) => `${o.name}${o.tier ? ` (${o.tier})` : ''}`).join(', ') || 'nothing — every system they know has someone else'}\n- **Open work to hand off:** ${tix.map((x) => `${x.key} ${x.pr} (${x.who})`).join(', ') || 'none'}\n\nAsk "who else could learn ${orphan[0]?.name || 'a system'}?" to start spreading it.`);
+  }
+
+  // ---- act on the words you used: "email Kate apologising for … and confirm it goes out Friday"
+  const mailTo = first('Person') || (first('Org') ? { uid: (await ctx.g.one(`MATCH (p:Person)-[:WORKS_AT]->(:Org {uid:$o}) RETURN p.uid AS uid LIMIT 1`, { o: first('Org')!.uid }, 'their contact'))?.uid, label: 'Person' } : null);
+  if (/^(please )?(draft|write|send|email|mail|tell|let)\b/.test(low) && /\b(email|mail|write|tell|let .+ know|reply)\b/.test(low) && mailTo?.uid) {
+    const said = t.match(/\b(?:saying|that|about|to say|telling (?:her|him|them)|explaining|apologi[sz]ing|confirming|letting (?:her|him|them) know)\b([\s\S]*)$/i);
+    if (said && said[1].trim().length > 6) return done(await draftFromWords(ctx, call, mailTo.uid, t));
+  }
+
+  // ---- "book a 30 minute call with Hana tomorrow at 2pm"
+  if (/\b(book|schedule|set up|arrange|put)\b.*\b(call|meeting|sync|1:1|chat|catch[- ]?up|time)\b/.test(low) && first('Person')) {
+    const people = ents.filter((e) => e.label === 'Person');
+    const mins = Number(low.match(/(\d+)\s*(?:-| )?(?:min|minute)/)?.[1] || (/\bhour\b/.test(low) ? 60 : 30));
+    const start = parseWhen(low);
+    const topic = first('Project', 'Org', 'System', 'Ticket');
+    const title = topic ? `${(await ctx.g.one(`MATCH (n {uid:$u}) RETURN CASE WHEN n:Ticket THEN n.key ELSE n.name END AS n`, { u: topic.uid }))?.n} sync` : `Call with ${(await ctx.g.one(`MATCH (p:Person {uid:$u}) RETURN p.name AS n`, { u: people[0].uid }))?.n?.split(' ')[0]}`;
+    return done((await call('propose_event', { title, attendees: people.map((p) => p.uid), minutes: mins, ...(start ? { start: new Date(start).toISOString() } : {}) })).text);
   }
 
   // ---- decisions waiting on me: "confirm Oct 28", "go with the shim"
@@ -580,7 +745,7 @@ export async function plan(ctx: Ctx, input: string, opts: PlanOpts = {}): Promis
   }
 
   // ---- dates: "when is the EU launch date?"
-  if (/\bwhen (is|are|will|does|do)\b|\b(date|deadline|due|eta|ship date|launch date)\b/.test(low) && first('Project')) {
+  if (/\bwhen (is|are|will|does|do)\b|\b(date|deadline|due|eta|ship date|launch date|days? (until|till|to)|how long (until|till|before))\b/.test(low) && first('Project')) {
     const x = first('Project')!;
     const r = await ctx.g.one(
       `MATCH (p:Project {uid:$u})
@@ -854,4 +1019,55 @@ ${lines.join('\n')}
 **Decisions we owe:** ${decisions.map((d) => d.text).join('; ') || 'none'}.
 
 _Everything above is read from the graph; Show path has the queries. Churn and pipeline numbers aren't in the graph — add them by hand._`;
+}
+
+/** "tomorrow at 2pm", "monday 10:30", "today at 4" → a timestamp (local time), or null. */
+function parseWhen(low: string): number | null {
+  const d = new Date();
+  let day: Date | null = null;
+  if (/\btoday\b/.test(low)) day = new Date(d);
+  else if (/\btomorrow\b/.test(low)) { day = new Date(d); day.setDate(d.getDate() + 1); }
+  else {
+    const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+    const i = days.findIndex((x) => new RegExp(`\\b${x}\\b`).test(low));
+    if (i >= 0) { day = new Date(d); day.setDate(d.getDate() + ((i - d.getDay() + 7) % 7 || 7)); }
+  }
+  const tm = low.match(/\b(?:at\s*)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b|\bat\s+(\d{1,2})(?::(\d{2}))?\b/);
+  if (!day && !tm) return null;
+  day = day || new Date(d);
+  let h = 10, m = 0;
+  if (tm) {
+    h = Number(tm[1] ?? tm[4]); m = Number(tm[2] ?? tm[5] ?? 0);
+    const ap = tm[3];
+    if (ap === 'pm' && h < 12) h += 12;
+    if (ap === 'am' && h === 12) h = 0;
+    if (!ap && h < 8) h += 12; // "at 2" means the afternoon
+  }
+  day.setHours(h, m, 0, 0);
+  return day.getTime();
+}
+
+/** An email in the user's own words, with where things stand from the graph — nothing invented. */
+async function draftFromWords(ctx: Ctx, call: (n: string, a?: any) => Promise<ToolResult>, person: string, t: string) {
+  const g = ctx.g;
+  const p = await g.one(`MATCH (p:Person {uid:$u}) OPTIONAL MATCH (p)-[:WORKS_AT]->(o:Org) RETURN p.name AS name, o.uid AS org, o.kind AS kind`, { u: person }, 'who it is to');
+  const meName = (await g.one(`MATCH (m:Person {me:true}) RETURN m.name AS n`))?.n || '';
+  const first = String(p?.name || '').split(' ')[0];
+  // turn the instruction into sentences: "apologizing for X" → "I'm sorry about X." ; "confirm Y" → "I can confirm Y."
+  // drop the instruction ("draft an email to Kate"), keep what to say
+  const mk = t.match(/\b(apologi\w*|confirm\w*|thank\w*|saying|that|about|to say|telling (?:her|him|them)|explaining|letting (?:her|him|them) know)\b/i);
+  const ask = mk ? (/^(apologi|confirm|thank)/i.test(mk[1]) ? t.slice(mk.index!) : t.slice(mk.index! + mk[0].length)).trim() : t;
+  const parts = ask.split(/\s*(?:,|\band\b|;)\s*(?=apologi|confirm|let|say|tell|ask|mention|thank)/i).map((x) => x.trim()).filter(Boolean);
+  const sentence = (x: string) => {
+    let y = x.replace(/^apologi[sz]\w*\s*(for|about)?\s*/i, "I'm sorry about ").replace(/^confirm\w*\s*(that)?\s*/i, 'I can confirm that ').replace(/^thank\w*\s*(them|her|him)?\s*(for)?\s*/i, 'Thank you for ').replace(/^(let|tell) (her|him|them) know (that )?/i, '').replace(/^ask (her|him|them) (to|if|whether)\s*/i, 'Could you ').replace(/\b(she|he|they)'?(?:ll| will)\b/gi, 'you will');
+    y = y.replace(/\bthe (customer|client)\b/gi, 'you').trim();
+    return y.charAt(0).toUpperCase() + y.slice(1).replace(/[.!]*$/, '.');
+  };
+  const lines = parts.map(sentence);
+  // where things stand, from the graph: their open tickets and who owns them
+  const tix = p?.org ? await g.q(`MATCH (t:Ticket {status:'open'})-[:FOR]->(:Org {uid:$o}) OPTIONAL MATCH (t)-[:ASSIGNED_TO]->(a:Person) RETURN t.title AS title, a.name AS who`, { o: p.org }, 'their open tickets') : [];
+  const stand = tix.length ? `\n\nWhere things stand: ${tix.map((x) => `${x.title.replace(/^.*?:\s*/, '')} — ${x.who?.split(' ')[0] || 'our team'} is on it`).join('; ')}.` : '';
+  const thread = await g.one(`MATCH (:Person {uid:$u})<-[:FROM|TO]-(e:Email)-[:IN_THREAD]->(th:Thread) RETURN th.uid AS uid ORDER BY e.at DESC LIMIT 1`, { u: person }, 'the thread to reply on');
+  const body = `Hi ${first},\n\n${lines.join(' ')}${stand}\n\nBest,\n${meName}`;
+  return (await call('draft_email', { to: person, body, ...(thread?.uid ? { thread: thread.uid } : {}) })).text;
 }

@@ -837,7 +837,8 @@ export const tools: Tool[] = [
       let t = start ? Date.parse(start) : NaN;
       if (Number.isNaN(t)) t = await firstFreeSlot(g, [...people.map((p) => p.uid), (await me(g)).uid], minutes);
       const d = await draftNode(g, { kind: 'event', title, when: when(t), to: people.map((p) => p.name).join(', '), dot, payload: { title, attendees: people.map((p) => p.uid), start: t, minutes }, links: people.map((p) => ({ rel: 'INVITES', to: p.uid })) });
-      return { text: `Proposed **${title}** ${when(t)} with ${people.map((p) => p.name).join(', ')} — the first slot nobody has a clash.`, cards: [{ type: 'draft', draft: { uid: d, kind: 'event', status: 'pending', title, to: people.map((p) => p.name).join(', '), when: when(t) } }] };
+      const clash = start ? await g.one(`UNWIND $u AS x MATCH (:Person {uid:x})-[:ATTENDS]->(e:Event) WHERE e.start < $end AND e.end > $start RETURN e.title AS title LIMIT 1`, { u: [...people.map((p) => p.uid), (await me(g)).uid], start: t, end: t + minutes * 60_000 }, 'anything clashing at that time?') : null;
+      return { text: `Proposed **${title}** ${when(t)} (${minutes} min) with ${people.map((p) => p.name).join(', ')} — ${start ? (clash ? `heads up, it overlaps **${clash.title}**` : 'the time you asked, and nobody has a clash') : 'the first slot nobody has a clash'}. Approve to send the invite.`, cards: [{ type: 'draft', draft: { uid: d, kind: 'event', status: 'pending', title, to: people.map((p) => p.name).join(', '), when: when(t) } }] };
     },
   },
 
@@ -977,7 +978,7 @@ export const tools: Tool[] = [
         const ou = o?.label === 'Person' ? (await g.one(`MATCH (:Person {uid:$u})-[:WORKS_AT]->(o:Org) RETURN o.uid AS uid`, { u: o.uid }))?.uid : o?.uid;
         const one = rows.find((r) => r.uid === ou);
         if (!one) return { text: `${o?.name || org} isn't a customer in the graph, so I don't have a health read on them.` };
-        const verdict = one.level === 'at risk' ? 'No — they are at risk' : one.level === 'watch' ? 'Mostly, but worth watching' : 'Yes, by everything the graph shows';
+        const verdict = one.level === 'at risk' ? 'At risk' : one.level === 'watch' ? 'Not at risk yet — but worth watching' : 'Healthy by everything the graph shows';
         return {
           text: `**${verdict}** (${one.name}: risk ${one.risk}${one.arr ? `, $${Math.round(one.arr / 1000)}k ARR` : ''}).${one.signals.length ? `\n${one.signals.map((x) => `- ${x.what}`).join('\n')}` : '\nNothing open, nobody waiting.'}${one.next ? `\n\nNext: ${one.next.label}.` : ''}`,
           cards: [{ type: 'graph', title: one.name, focus: [one.uid, ...one.signals.flatMap((x) => x.uids)].slice(0, 12) }, ...(one.next ? [{ type: 'options' as const, question: 'Do it?', options: [{ key: 'A', label: one.next.label, value: one.next.ask }] }] : [])],
