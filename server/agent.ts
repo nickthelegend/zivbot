@@ -9,6 +9,7 @@ import {
   postMessage, getDot, getConversation, updateDot, listDots, workingContext, recordAnswer, exchangeBetween, history, type Message,
 } from './memory.ts';
 import { clip } from './util.ts';
+import { cliTurn } from './brains.ts';
 
 /**
  * Zivs think here. Every Cypher statement run while a Ziv works is captured
@@ -27,7 +28,7 @@ type Reply = { text: string; cards: Card[]; tools: string[]; mode: string; answe
 export type DotInfo = { uid: string; name: string; role: string; stage?: string; conv?: string; avatar?: string; color?: string };
 
 /** Run one Ziv over one input and return its reply (does not post it). */
-export async function think(userId: string, dot: DotInfo, conv: string, text: string, opts: { from?: string; inGroup?: boolean } = {}): Promise<Reply> {
+export async function think(userId: string, dot: DotInfo, conv: string, text: string, opts: { from?: string; inGroup?: boolean; model?: string } = {}): Promise<Reply> {
   const g = await userGraph(userId);
   publish(userId, { type: 'thinking', dot: dot.uid, conv, on: true });
   // stream the steps and every node the Cypher touches, so the UI can draw the Ziv thinking
@@ -46,21 +47,36 @@ export async function think(userId: string, dot: DotInfo, conv: string, text: st
   let r: Omit<Reply, 'answer'>;
   try {
     r = await withTrace(trace, async () => {
+      const brain = opts.model || 'auto';
+      const orModel = brain.startsWith('or:') ? brain.slice(3) : config.llm.model;
       const viaModel = async () => {
-        const x = await llmTurn(ctx, dot, conv, text, opts.from);
+        const x = await llmTurn(ctx, dot, conv, text, opts.from, orModel);
         delegated.push(...x.delegated);
-        return { text: x.text, cards: x.cards, tools: x.tools, mode: `llm:${config.llm.model}` };
+        return { text: x.text, cards: x.cards, tools: x.tools, mode: `llm:${orModel}` };
       };
-      if (llmEnabled() && config.llm.mode === 'llm' && llmBudgetLeft() > 0) {
+      // a model you picked in the chat answers every turn; if it can't, the planner still does
+      let note = '';
+      if (brain === 'codex' || brain.startsWith('claude:')) {
+        try {
+          const { sys, recent } = await systemPrompt(ctx, dot, conv, text, opts.from, true);
+          const prompt = `${sys}\n\n${recent.length ? `Conversation so far:\n${recent.map((m) => `${m.role === 'user' ? 'User' : dot.name}: ${m.content}`).join('\n')}\n\n` : ''}User: ${text}`;
+          return await cliTurn(brain, { userId, conv, dot: dot.uid, trace }, prompt);
+        } catch (e: any) { console.warn('[brain]', brain, e.message); note = `_${brain.startsWith('codex') ? 'Codex' : 'Claude'} couldn't answer (${clip(e.message, 140)}) — the graph planner did._\n\n`; }
+      } else if (brain.startsWith('or:')) {
+        if (llmEnabled() && llmBudgetLeft() > 0) {
+          try { return await viaModel(); } catch (e: any) { console.warn('[llm]', e.message); note = `_${orModel} couldn't answer (${clip(e.message, 140)}) — the graph planner did._\n\n`; }
+        } else note = '_The model budget for today is used up — the graph planner answered._\n\n';
+      }
+      if (brain === 'auto' && llmEnabled() && config.llm.mode === 'llm' && llmBudgetLeft() > 0) {
         try { return await viaModel(); } catch (e: any) { console.warn('[llm] falling back to planner:', e.message); }
       }
       // Hybrid: the graph planner answers what it recognises (fast, free, deterministic); when it isn't
       // sure, the model reads the question and picks from the same graph tools itself.
       const p = await plan(ctx, text, { dot, from: opts.from, inGroup: opts.inGroup, delegate: async (to, goal) => { const x = await messageDot(userId, dot, to, goal); if (x.answer) delegated.push(x.answer); return x; } });
-      if (p.confident === false && llmEnabled() && llmBudgetLeft() > 0) {
+      if (brain === 'auto' && p.confident === false && llmEnabled() && llmBudgetLeft() > 0) {
         try { return await viaModel(); } catch (e: any) { console.warn('[llm] keeping the planner answer:', e.message); }
       }
-      return { ...p, mode: 'graph-planner' };
+      return { ...p, text: note + p.text, mode: 'graph-planner' };
     });
   } catch (e: any) {
     console.error('[turn]', e);
@@ -73,7 +89,7 @@ export async function think(userId: string, dot: DotInfo, conv: string, text: st
 }
 
 /** A message from you into a conversation (direct chat or group). */
-export async function handleUserMessage(userId: string, convUid: string, text: string) {
+export async function handleUserMessage(userId: string, convUid: string, text: string, model = 'auto') {
   const g = await userGraph(userId);
   const conv = await getConversation(g, convUid);
   if (!conv) throw new Error('unknown conversation');
@@ -83,7 +99,7 @@ export async function handleUserMessage(userId: string, convUid: string, text: s
   if (conv.kind === 'direct') {
     const dot = { ...dots[0], conv: convUid };
     if (String(dot.stage || '').startsWith('onboard')) return onboarding(userId, g, dot, text);
-    const r = await think(userId, dot, convUid, text);
+    const r = await think(userId, dot, convUid, text, { model });
     return postMessage(userId, g, { conv: convUid, role: 'assistant', dot: dot.uid, text: r.text, cards: r.cards, answer: r.answer });
   }
 
@@ -91,7 +107,7 @@ export async function handleUserMessage(userId: string, convUid: string, text: s
   const responders = pickResponders(dots, text);
   publish(userId, { type: 'working', conv: convUid, dots: responders.map((d) => d.name) });
   const replies = await Promise.all(responders.map(async (d) => {
-    const r = await think(userId, d, convUid, text, { inGroup: responders.length > 1 });
+    const r = await think(userId, d, convUid, text, { inGroup: responders.length > 1, model });
     return postMessage(userId, g, { conv: convUid, role: 'assistant', dot: d.uid, text: r.text, cards: r.cards, answer: r.answer });
   }));
   publish(userId, { type: 'working', conv: convUid, dots: [] });
@@ -163,10 +179,11 @@ const messageDotTool = {
   params: { type: 'object', properties: { dot: { type: 'string' }, message: { type: 'string' } }, required: ['dot', 'message'] },
 };
 
-async function llmTurn(ctx: Ctx, dot: DotInfo, conv: string, text: string, from?: string) {
+/** What every model answering as a Ziv is told — OpenRouter models and subscription CLIs alike. */
+async function systemPrompt(ctx: Ctx, dot: DotInfo, conv: string, text: string, from?: string, viaMcp = false) {
   const wc = await workingContext(ctx.g, conv, text);
   const others = (await listDots(ctx.g)).filter((d) => d.uid !== dot.uid).map((d) => `${d.name} (${d.role})`);
-  const sys = `You are ${dot.name}, a personal agent ("dot") in ZivBot. Your role: ${dot.role}.
+  const sys = `You are ${dot.name}, a personal agent (a "Ziv") in ZivBot. Your role: ${dot.role}.
 ${config.hosted ? 'You run on the ZivBot web demo over a synthetic company (Lumen Labs); coding agents run in the desktop app, so for code fixes create the approval draft and say so.' : 'You run on your own computer.'} Everything you know lives in the user's FalkorDB knowledge graph: their apps (mail, calendar, Slack, Notion, Linear, GitHub…), their company (people, teams, customers, systems), their coding-agent subscriptions (Codex, Claude Code, Cursor, OpenCode, Grok, Antigravity), and your memory.
 Rules:
 - Ground every claim in tool results. Prefer the specific graph tools; use run_cypher only when none fits; use find_tools/use_tool for connected apps.
@@ -178,10 +195,17 @@ ${from ? `This message is from your colleague Ziv ${from}, not the user. Do the 
 Other dots: ${others.join('; ') || 'none'}.
 Memories that apply:\n${wc.memories.map((m) => `- (${m.kind}) ${m.text}`).join('\n') || '- none'}
 Earlier conversations on these topics:\n${wc.earlier.map((e) => `- ${e.dot || 'you'}/${e.role}: ${clip(e.text, 160)}`).join('\n') || '- none'}
-Now: ${new Date().toString()}`;
+Now: ${new Date().toString()}${viaMcp ? `
+Your tools are the "zivbot" MCP server's tools — they query the user's FalkorDB graph. Use only those: do not read local files, browse, or run shell commands. Reply with the answer itself in markdown (no preamble about which tools you used). message_dot is not available here.` : ''}`;
+  const recent = wc.recent.slice(-8, -1).map((m) => ({ role: m.role === 'user' ? 'user' : 'assistant', content: clip(m.text, 1200) }) as { role: 'user' | 'assistant'; content: string });
+  return { sys, recent };
+}
+
+async function llmTurn(ctx: Ctx, dot: DotInfo, conv: string, text: string, from?: string, model = config.llm.model) {
+  const { sys, recent } = await systemPrompt(ctx, dot, conv, text, from);
   const msgs: ChatMsg[] = [
     { role: 'system', content: sys },
-    ...wc.recent.slice(-8, -1).map((m) => ({ role: m.role === 'user' ? 'user' : 'assistant', content: clip(m.text, 1200) }) as ChatMsg),
+    ...recent.map((m) => m as ChatMsg),
     { role: 'user', content: text },
   ];
   const defs = [...allTools().map((t) => ({ name: t.name, description: t.description, params: t.params })), messageDotTool];
@@ -193,7 +217,7 @@ Now: ${new Date().toString()}`;
   for (let step = 0; step < MAX; step++) {
     // last step: no more tools — answer from what the tools returned
     if (step === MAX - 1) msgs.push({ role: 'user', content: 'Answer now from the tool results above. Lead with the direct answer, then the evidence. Do not call more tools.' });
-    const m = await chat(msgs, step === MAX - 1 ? undefined : defs);
+    const m = await chat(msgs, step === MAX - 1 ? undefined : defs, 45_000, model);
     if (!m.tool_calls?.length) return { text: m.content || '…', cards, tools: used, delegated: delegatedLlm };
     msgs.push({ role: 'assistant', content: m.content ?? null, tool_calls: m.tool_calls });
     for (const call of m.tool_calls) {

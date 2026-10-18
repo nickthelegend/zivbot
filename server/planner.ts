@@ -249,7 +249,7 @@ export async function plan(ctx: Ctx, input: string, opts: PlanOpts = {}): Promis
     if (hit) return done(hit.status === 'pending' ? `**No — it's still open.** “${hit.text}” is waiting on you (raised ${ago(hit.at)}). Say "help me decide: ${hit.text}" to see the options weighed.` : `**Yes.** “${hit.text}” was decided${hit.choice ? ` → ${hit.choice}` : ''} (${ago(hit.at)}).`);
   }
   // "which emails haven't I replied to?"
-  if (/\b(haven'?t|not|never) (i )?(replied|answered|responded)|\bunreplied\b|\bunanswered\b|\bneed(s)? (a )?(reply|response)\b/.test(low)) {
+  if (/\b(haven'?t|not|never) (i )?(replied|answered|responded)|\bunreplied\b|\bunanswered\b|\bneed(s)? (a |my )?(reply|response)\b|\bwaiting (for me |on me )?to (reply|respond|answer)\b|\bowe (a |an )?(reply|response|answer)\b|\b(emails?|mails?|threads?|messages?)\b.*\b(reply|respond|answer) to\b/.test(low)) {
     return done((await call('insights', { focus: 'waiting' })).text);
   }
   // "is Dev on the critical path?"
@@ -803,7 +803,7 @@ export async function plan(ctx: Ctx, input: string, opts: PlanOpts = {}): Promis
       cards.push({ type: 'options', question: 'Ask about one of these', options: words.slice(0, 4).map((h: Row, i: number) => ({ key: String.fromCharCode(65 + i), label: `${h.label}: ${String(h.name).slice(0, 48)}`, value: `Tell me about ${h.name}` })) });
       return unsure(`Nothing matches that closely, but these mention the same words:\n${words.map((h: Row) => `- ${h.label} **${h.name}**`).join('\n')}`);
     }
-    return unsure(fallback(cards));
+    return unsure(await fallback(ctx.g, cards));
   }
 
   // "tell me about X", "who is X", or a bare entity name
@@ -815,22 +815,27 @@ export async function plan(ctx: Ctx, input: string, opts: PlanOpts = {}): Promis
     if (hits[0].score > 1.5 * (hits[1]?.score || 0)) return unsure((await call('describe_entity', { ref: hits[0].uid })).text);
     return unsure(`Here's what I found in your graph:\n${hits.map((h: Row) => `- ${h.label} **${h.name}**`).join('\n')}\n\nAsk me about any of them.`);
   }
-  return unsure(fallback(cards));
+  return unsure(await fallback(ctx.g, cards));
 }
 
-/** Nothing matched: say so plainly and offer questions the graph can answer. */
-function fallback(cards: Card[]) {
-  cards.push({
-    type: 'options', question: 'Try one of these',
-    options: [
-      { key: 'A', label: 'What needs me today?', value: 'What needs me today?' },
-      { key: 'B', label: "What's blocking the EU launch?", value: "What's blocking the EU launch?" },
-      { key: 'C', label: 'Which customers are at risk?', value: 'Which customers are at risk?' },
-      { key: 'D', label: 'What breaks if payments-api goes down?', value: 'What breaks if payments-api goes down?' },
-      { key: 'E', label: 'What if Hana is out next week?', value: 'What if Hana is out next week?' },
-    ],
-  });
-  return `I don't have anything in your graph that answers that, and I'd rather say so than guess. I answer by walking how people, systems, customers, tickets and decisions connect — for example:`;
+/** Nothing matched: say so plainly, and offer questions this graph can actually answer — built from what's in it. */
+async function fallback(g: UserGraph, cards: Card[]) {
+  const qs: string[] = ['What needs me today?'];
+  const one = async (cypher: string) => (await g.one(cypher, {}, 'something to suggest').catch(() => null))?.n as string | undefined;
+  if (await one(`MATCH (t:Thread {awaitingReply:true}) RETURN t.subject AS n LIMIT 1`)) qs.push("Which emails haven't I replied to?");
+  const repo = await one(`MATCH (r:Repo) OPTIONAL MATCH (r)<-[x]-() WITH r, count(x) AS c RETURN r.name AS n ORDER BY c DESC LIMIT 1`);
+  if (repo) qs.push(`Who knows ${repo} best?`);
+  const org = await one(`MATCH (o:Org) WHERE o.arr IS NOT NULL RETURN o.name AS n ORDER BY o.arr DESC LIMIT 1`);
+  if (org) qs.push('Which customers are at risk?');
+  const sys = await one(`MATCH (s:System) RETURN s.name AS n LIMIT 1`);
+  if (sys) qs.push(`What breaks if ${sys} goes down?`);
+  // a real correspondent, not a mailer: someone you've also written to, else a fellow contributor
+  const who = await one(`MATCH (m:Person {me:true})<-[:FROM]-(:Email)-[:TO]->(p:Person) WHERE p <> m RETURN p.name AS n, count(*) AS c ORDER BY c DESC LIMIT 1`)
+    ?? await one(`MATCH (p:Person)-[:CONTRIBUTES_TO]->(:Repo) WHERE coalesce(p.me,false) = false RETURN p.name AS n, count(*) AS c ORDER BY c DESC LIMIT 1`);
+  if (who) qs.push(`Tell me about ${who}`);
+  qs.push('What changed this week?');
+  cards.push({ type: 'options', question: 'Try one of these', options: qs.slice(0, 5).map((q, i) => ({ key: 'ABCDE'[i], label: q, value: q })) });
+  return `I don't have anything in your graph that answers that, and I'd rather say so than guess. I answer by walking how the people, mail, code and decisions in your graph connect — for example:`;
 }
 
 export async function triageReply(ctx: Ctx, call: (n: string, a?: any) => Promise<ToolResult>, cards: Card[]) {

@@ -11,6 +11,7 @@ import { falkor, userGraph, listGraphs } from './graph.ts';
 import { subscribe, publish } from './bus.ts';
 import { ensureUser, ensureTeam, isUser } from './users.ts';
 import { buildMcp } from './mcpServer.ts';
+import { listBrains, setLocalBase, turnSink } from './brains.ts';
 import { startGithubSignIn, accountOf, signOut } from './account.ts';
 import { googleClient, saveGoogleClient, startGoogleSignIn } from './google-oauth.ts';
 import { enableRelay, relayStatus, resumeRelays, disableRelay } from './relay.ts';
@@ -131,9 +132,11 @@ app.get('/api/conversations/:id/messages', async (c) => {
 app.post('/api/conversations/:id/messages', async (c) => {
   const id = user(c);
   if (config.hosted) limit(`msg:${id}`, 30, 60_000);
-  const { text } = await c.req.json();
+  const { text, model } = await c.req.json();
   if (!text?.trim()) throw new HttpError(400, 'empty message');
-  void handleUserMessage(id, c.req.param('id'), String(text).slice(0, 4000)).catch((e) => {
+  const brain = typeof model === 'string' && /^(auto|planner|codex|claude:(sonnet|opus)|or:[\w./:-]{3,100})$/.test(model) ? model : 'auto';
+  if (config.hosted && (brain === 'codex' || brain.startsWith('claude:'))) throw new HttpError(400, 'Codex and Claude run on your own subscription in the desktop app.');
+  void handleUserMessage(id, c.req.param('id'), String(text).slice(0, 4000), brain).catch((e) => {
     console.error('[turn]', e);
     publish(id, { type: 'error', message: e.message });
   });
@@ -400,6 +403,8 @@ app.post('/api/scan', async (c) => {
 // ------------------------------------------------------------------ account & anywhere
 
 const localBase = () => `http://127.0.0.1:${config.port}`;
+setLocalBase(localBase);
+app.get('/api/models', async (c) => { user(c); return c.json({ models: await listBrains() }); });
 
 app.get('/api/account', async (c) => c.json({ account: await accountOf(user(c)), hosted: config.hosted }));
 app.post('/api/account/github/start', async (c) => {
@@ -446,7 +451,7 @@ app.all('/mcp', async (c) => {
   if (!id || !/^[a-zA-Z0-9_-]{6,64}$/.test(id) || !(await isUser(id))) return c.json({ error: 'pass ?user=<your ZivBot id> (Profile → MCP)' }, 401);
   if (config.hosted) limit(`mcp:${id}`, 60, 60_000);
   const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
-  const server = await buildMcp(id);
+  const server = await buildMcp(id, turnSink(c.req.query('turn'), id));
   await server.connect(transport);
   return transport.handleRequest(c.req.raw);
 });

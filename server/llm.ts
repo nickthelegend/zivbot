@@ -16,7 +16,7 @@ export function llmBudgetLeft() {
   return budget.exhausted ? 0 : Math.max(0, config.llm.daily - budget.used);
 }
 
-export async function chat(messages: ChatMsg[], tools?: { name: string; description: string; params: unknown }[], timeoutMs = 45_000) {
+export async function chat(messages: ChatMsg[], tools?: { name: string; description: string; params: unknown }[], timeoutMs = 45_000, model = config.llm.model) {
   if (llmBudgetLeft() <= 0) throw new Error('LLM daily budget used up');
   budget.used++;
   const ctrl = new AbortController();
@@ -32,7 +32,7 @@ export async function chat(messages: ChatMsg[], tools?: { name: string; descript
         'http-referer': 'https://github.com/nickthelegend/zivbot',
       },
       body: JSON.stringify({
-        model: config.llm.model,
+        model,
         messages,
         temperature: 0.2,
         ...(tools?.length ? { tools: tools.map((x) => ({ type: 'function', function: { name: x.name, description: x.description, parameters: x.params } })), tool_choice: 'auto' } : {}),

@@ -64,7 +64,7 @@ export async function startGoogleSignIn(userId: string): Promise<{ url: string }
     access_type: 'offline', prompt: 'consent select_account', include_granted_scopes: 'true',
     code_challenge: challenge, code_challenge_method: 'S256', state,
   })}`;
-  const timer = setTimeout(() => { server.close(); pending.delete(userId); publish(userId, { type: 'google', status: 'timeout' }); }, 5 * 60_000);
+  const timer = setTimeout(() => { server.close(); pending.delete(userId); publish(userId, { type: 'google', status: 'timeout' }); console.warn('[google] sign-in timed out for', userId); }, 30 * 60_000);
   server.on('request', async (req, res) => {
     const u = new URL(req.url || '/', redirect);
     const reply = (code: number, t: string, b: string) => { res.writeHead(code, { 'content-type': 'text/html; charset=utf-8', connection: 'close' }); res.end(page(t, b)); };
@@ -84,6 +84,7 @@ export async function startGoogleSignIn(userId: string): Promise<{ url: string }
       const email = tok.id_token ? JSON.parse(Buffer.from(String(tok.id_token).split('.')[1], 'base64url').toString()).email : '';
       reply(200, `Connected ${email || 'Google'}`, 'You can close this tab. ZivBot is reading your mail and calendar into your graph.');
       saveConnectorConfig(userId, 'google', { clientId: client.clientId, clientSecret: client.clientSecret, refreshToken: tok.refresh_token, email });
+      console.log('[google] signed in as', email);
       publish(userId, { type: 'google', status: 'signed-in', email });
       // the real sync, exactly as if the fields had been filled in
       void connect(userId, 'google', {}).then(async (r: any) => {
@@ -94,8 +95,9 @@ export async function startGoogleSignIn(userId: string): Promise<{ url: string }
         publish(userId, { type: 'dots' });
         await afterConnect(userId, r?.counts || {});
       })
-        .catch((e) => publish(userId, { type: 'google', status: 'error', error: e.message }));
+        .catch((e) => { console.warn('[google] sync failed:', e.message); publish(userId, { type: 'google', status: 'error', error: e.message }); });
     } catch (e: any) {
+      console.warn('[google] sign-in failed:', e.message);
       reply(400, 'Google sign-in failed', `${e.message}. Close this tab and try again.`);
       publish(userId, { type: 'google', status: 'error', error: e.message });
     } finally {

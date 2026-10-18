@@ -49,7 +49,7 @@ export async function startGithubSignIn(userId: string): Promise<{ url: string }
   const { data, error } = await sb.auth.signInWithOAuth({ provider: 'github', options: { redirectTo, skipBrowserRedirect: true, scopes: 'read:user' } });
   if (error || !data?.url) { server.close(); throw new Error(error?.message || 'Supabase gave no sign-in URL'); }
   const done = new Promise<void>((resolve) => {
-    const timer = setTimeout(() => { server.close(); pending.delete(userId); publish(userId, { type: 'account', status: 'timeout' }); resolve(); }, 5 * 60_000);
+    const timer = setTimeout(() => { server.close(); pending.delete(userId); publish(userId, { type: 'account', status: 'timeout' }); resolve(); }, 15 * 60_000);
     server.on('request', async (req, res) => {
       const u = new URL(req.url || '/', redirectTo);
       const reply = (code: number, t: string, b: string) => { res.writeHead(code, { 'content-type': 'text/html; charset=utf-8', connection: 'close' }); res.end(page(t, b)); };

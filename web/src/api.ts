@@ -1,6 +1,8 @@
 // Thin client for the ZivBot API. The user id is a local, random id kept in
 // localStorage; each id maps to its own FalkorDB graph on the server.
 
+export type Brain = { id: string; label: string; sub: string; group: string; available: boolean; reason?: string };
+
 export type Card =
   | { type: 'options'; question?: string; options: { key: string; label: string; value: string }[] }
   | { type: 'connectors' }
@@ -110,7 +112,8 @@ export const api = {
   health: () => req<{ ok: boolean; falkordb: string; brain: string }>('/api/health'),
   state: () => req<{ dots: Dot[]; conversations: Conversation[]; profile: { name?: string }; pendingDrafts: number; hosted?: boolean; brain: string; presets: { name: string; avatar: string; role: string; color: string }[]; labels: Record<string, { color: string; icon: string }> }>('/api/state'),
   messages: (conv: string) => req<{ conversation: { uid: string; kind: string; name: string; dots: any[] }; messages: Message[] }>(`/api/conversations/${conv}/messages`),
-  send: (conv: string, text: string) => req(`/api/conversations/${conv}/messages`, { text }),
+  send: (conv: string, text: string, model = 'auto') => req(`/api/conversations/${conv}/messages`, { text, model }),
+  models: () => req<{ models: Brain[] }>('/api/models'),
   connectors: () => req<Connector[]>('/api/connectors'),
   connect: (id: string, values: Record<string, string> = {}) => req<{ ok: boolean; counts?: any; error?: string; missing?: string[] }>(`/api/connectors/${id}/connect`, values),
   disconnect: (id: string) => req(`/api/connectors/${id}/disconnect`, {}),

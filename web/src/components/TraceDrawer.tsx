@@ -31,7 +31,7 @@ export function TraceDrawer() {
             <div className="drawer-title">{t?.question || '…'}</div>
             {t && (
               <div className="drawer-meta">
-                <span className="pill-mini">{t.mode === 'graph-planner' ? 'graph planner' : t.mode.startsWith('llm:') ? `model picked the tools · ${t.mode.split('/').pop()}` : t.mode}</span>
+                <span className="pill-mini">{t.mode === 'graph-planner' ? 'graph planner' : t.mode.startsWith('llm:') ? `model picked the tools · ${t.mode.split('/').pop()}` : t.mode.startsWith('codex:') ? `Codex picked the tools · ${t.mode.slice(6)}` : t.mode.startsWith('claude:') ? `Claude ${t.mode.slice(7)} picked the tools` : t.mode}</span>
                 {t.delegatedTo?.length > 0 && <span className="pill-mini">delegated to {t.delegatedTo.join(', ')}</span>}
                 <span>{t.queries.length} Cypher queries · {total.toFixed(1)}ms in FalkorDB · {t.nodes.length} nodes touched by those queries</span>
               </div>

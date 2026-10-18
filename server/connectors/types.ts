@@ -70,6 +70,11 @@ export function need(ctx: ConnectorCtx, ...keys: string[]) {
 export async function getJson<T = any>(url: string, init: RequestInit = {}): Promise<T> {
   const r = await fetch(url, { ...init, headers: { 'user-agent': 'ZivBot/0.1 (+https://github.com/nickthelegend/zivbot)', ...(init.headers || {}) } });
   const text = await r.text();
-  if (!r.ok) throw new Error(`${new URL(url).host} ${r.status}: ${text.slice(0, 200)}`);
+  if (!r.ok) {
+    // Google's "this API is switched off in your Cloud project": say so, with the switch
+    const off = /has not been used in project (\d+) before or it is disabled/.test(text) && text.match(/https:\/\/console\.developers\.google\.com\/apis\/api\/([a-z.-]+)\/overview\?project=\d+/);
+    if (off) throw new Error(`Turn on the ${off[1].startsWith('gmail') ? 'Gmail' : off[1].startsWith('calendar') ? 'Google Calendar' : off[1]} API for your Google Cloud project, then connect again: ${off[0]}`);
+    throw new Error(`${new URL(url).host} ${r.status}: ${text.slice(0, 200)}`);
+  }
   try { return JSON.parse(text) as T; } catch { return text as unknown as T; }
 }

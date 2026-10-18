@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react';
-import { api, events, type Connector, type Conversation, type Dot, type Message, type Run } from './api';
+import { type Brain, api, events, type Connector, type Conversation, type Dot, type Message, type Run } from './api';
 
 /** One tiny external store for the whole app, fed by the API and the SSE stream. */
 
@@ -10,6 +10,7 @@ export type State = {
   ready: boolean;
   error?: string;
   brain: string;
+  models: Brain[];
   hosted?: boolean;
   account?: { github: string; name: string; avatar: string } | null;
   profile: { name?: string };
@@ -45,7 +46,7 @@ export type State = {
 };
 
 let state: State = {
-  ready: false, brain: '', profile: {}, dots: [], conversations: [], presets: [], labels: {}, pendingDrafts: 0, view: 'chat',
+  ready: false, brain: '', models: [], profile: {}, dots: [], conversations: [], presets: [], labels: {}, pendingDrafts: 0, view: 'chat',
   messages: {}, thinking: {}, working: {}, runs: {}, connectors: [], connectorProgress: {}, draftStatus: {}, connectOpen: false, newDotOpen: false,
   rightOpen: typeof window !== 'undefined' ? window.innerWidth > 1200 : true,
   mobileList: true,
@@ -88,6 +89,7 @@ export async function boot() {
     void loadConnectors();
     void api.runs().then((runs) => set({ runs: Object.fromEntries(runs.map((r) => [r.uid, r])) }));
     void api.account().then((a) => set({ account: a.account })).catch(() => {});
+    void api.models().then((r) => set({ models: r.models })).catch(() => {});
   } catch (e: any) {
     set({ error: e.message, ready: false });
     setTimeout(boot, 3000);
@@ -104,10 +106,20 @@ export async function openConversation(conv: string) {
   set((s) => ({ messages: { ...s.messages, [conv]: r.messages }, conversations: s.conversations.map((c) => (c.uid === conv ? { ...c, unread: 0 } : c)) }));
 }
 
+/** The model that answers in a chat, picked in the composer (per chat, else your last pick). */
+export function modelFor(conv: string): string {
+  try { return localStorage.getItem(`zivbot.model.${conv}`) || localStorage.getItem('zivbot.model') || 'auto'; } catch { return 'auto'; }
+}
+export function setModelFor(conv: string, id: string) {
+  try { localStorage.setItem(`zivbot.model.${conv}`, id); localStorage.setItem('zivbot.model', id); } catch { /* private mode */ }
+}
+
 export async function send(conv: string, text: string) {
   const t = text.trim();
   if (!t) return;
-  await api.send(conv, t);
+  const model = modelFor(conv);
+  const known = get().models;
+  await api.send(conv, t, !known.length || known.some((m) => m.id === model && m.available) ? model : 'auto');
   // If the live stream missed the reply (sleeping laptop, proxy restart), catch up.
   const before = get().messages[conv]?.length || 0;
   for (const ms of [4000, 10000, 25000]) {
