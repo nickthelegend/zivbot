@@ -10,7 +10,27 @@
 
 <p align="center"><a href="https://zivbot.vercel.app/demo.mp4"><b>▶ Watch the 3-minute demo</b></a>: the real app from a brand-new account with zero chats: onboarding, one-click Sign in with Google and Sign in with GitHub on real accounts, the per-chat model picker answering through Codex and Claude on my own subscriptions, an iPhone reaching the laptop over the encrypted relay, and Codex calling ZivBot over MCP. Voiceover by Chatterbox TTS.</p>
 
+<p align="center"><sub><b>Chapters:</b> 0:11 new account, zero chats · 0:21 Sign in with Google · 0:35 Sign in with GitHub · 0:48 the FalkorDB graph · 1:01 algorithms as tools · 1:13 a real question · 1:24 Show path · 1:35 Codex on my ChatGPT plan · 1:48 Claude on my Claude plan · 1:58 a draft waiting for approval · 2:09 a new Ziv · 2:19 Anywhere QR · 2:32 iPhone over the relay · 2:41 Codex calling ZivBot over MCP</sub></p>
+
 <p align="center"><img src="docs/screenshots/chat.png" width="880" alt="Ziv triaging from the graph"></p>
+
+### On my real accounts (frames from the demo video)
+
+A brand-new account signed in with Google and GitHub. These are real mail threads, real repos and real answers. One third party's address is blurred.
+
+| **One-click sign-in, real data in** | **Which emails haven't I replied to?** (graph planner) |
+|---|---|
+| <img src="docs/screenshots/real-signin.jpg" alt="Google and GitHub connected"> | <img src="docs/screenshots/real-inbox.jpg" alt="Threads waiting on a reply"> |
+| **Show path: the exact Cypher behind it** | **Model picker → Codex on my ChatGPT plan, over MCP** |
+| <img src="docs/screenshots/real-trace.jpg" alt="Trace"> | <img src="docs/screenshots/real-codex.jpg" alt="Codex answering"> |
+| **Claude on my Claude plan, same graph tools** | **A reply drafted, waiting for approval** |
+| <img src="docs/screenshots/real-claude.jpg" alt="Claude answering"> | <img src="docs/screenshots/real-draft.jpg" alt="Draft card"> |
+| **The live schema of my graph** | **Label propagation over my real collaborators** |
+| <img src="docs/screenshots/real-schema.jpg" alt="Schema"> | <img src="docs/screenshots/real-groups.jpg" alt="Communities"> |
+
+<p align="center"><img src="docs/screenshots/real-iphone.jpg" width="300" alt="iPhone over the relay"><br><sub>The iPhone reaching the Zivs on the laptop through the end-to-end encrypted relay.</sub></p>
+
+### On the synthetic demo company (what the hosted demo runs)
 
 | What's blocking the EU launch: BLOCKED_BY to the root blocker | What if Hana is out: the person removed from the graph |
 |---|---|
@@ -31,6 +51,38 @@
 | <img src="docs/screenshots/palette.png" alt="Palette"> | <img src="docs/screenshots/mobile.png" width="300" alt="Mobile"> |
 
 ---
+
+## For judges: where to look
+
+| Criterion | Where it shows |
+|---|---|
+| **FalkorDB use** | One graph per user (`ziv_<id>`). Multi-hop Cypher for every answer ([the queries](#the-cypher-the-product-depends-on)). PageRank, betweenness, label propagation, WCC, BFS and shortest paths as agent tools. Full-text and vector indexes. Agent memory and answer provenance stored as nodes. `GRAPH.RO_QUERY` with timeouts for agent-written Cypher. |
+| **Agents that act** | Drafts and sends through Gmail, books on Calendar, decides with options weighed on the graph, hands code fixes to Codex, Claude Code or OpenCode on your own subscriptions. Every action waits for approval ([video](https://zivbot.vercel.app/demo.mp4) at 1:58). |
+| **Connected data** | One-click Google and GitHub sign-in plus 28 connectors. Everything maps into one graph, linked across apps. |
+| **Transparency** | **Show path** under every answer: the Cypher, the rows, the timings and the touched subgraph. It holds whichever model answered, including Codex and Claude over MCP. |
+| **Execution** | Live at [zivbot.vercel.app](https://zivbot.vercel.app) (Vercel + Railway + FalkorDB), desktop app, iPhone/Android, MCP server. 27 automated tests, plus end-to-end runs with real Codex and Claude. |
+| **UX** | GrokBot-style onboarding, a model picker per chat, ⌘K across the graph, live "thinking" steps, phone pairing by QR. |
+
+## Prompts to try
+
+Each prompt below is answered by walking the graph. On the hosted demo, connect the **Lumen Labs** sample company first. On your own accounts, the mail and GitHub prompts work as soon as you sign in.
+
+| Ask | What happens in FalkorDB |
+|---|---|
+| *Which emails haven't I replied to?* | Threads with `awaitingReply`, their last sender through `FROM`, newest first, with a draft offered for each. |
+| *What needs me today?* | Triage that ranks waiting threads by customer ARR and sender PageRank, P1/P2 tickets by blast radius, pending decisions and calendar clashes. |
+| *What's blocking the EU launch?* | `BLOCKED_BY*` upstream to the root blocker, then the `DEPENDS_ON` systems under it (critical path). |
+| *What breaks if payments-api goes down?* | A reverse `DEPENDS_ON` walk (BFS) that collects systems, customers and ARR at risk. |
+| *What if Hana is out next week?* | Hana is removed from the graph. It then shows what's orphaned (systems only she knows, her P1s) and proposes the best cover by `rankOwners`. |
+| *Who knows billing-db best?* | Knowers ranked from commits ×3, docs ×3 and tickets ×2, with a bus-factor warning. |
+| *How do I get a warm intro to Kate Morgan?* | `algo.SPpaths` over `COLLABORATES` / `KNOWS`. |
+| *Should we delay the EU launch?* | Each option is weighed on the graph: who waits on the date, which customers are hit, and the ARR involved. |
+| *Fix LUM-142* | Forge picks a coding agent from the `SKILLED_IN` skill graph. After you approve, it runs on a branch and writes back `(:Run)-[:RESOLVES]->(:Ticket)`. |
+| *Draft a reply to Nivesh* | A draft card. **Approve & send** sends it through your real Gmail. |
+| *Remember that I prefer Codex for payments work* | A procedural memory node every Ziv reads. *What do you remember?* lists them. |
+| *Who works with me on loom?* (pick **Claude** in the model menu) | Claude calls ZivBot's graph tools over MCP, and its Cypher shows under the answer. |
+
+Under the composer's **+**: *What needs me?* and *Open the graph*. In the graph view: **Algorithms** (one-click presets), **Schema** (the live model) and a **Cypher console**.
 
 ## Why a graph
 
