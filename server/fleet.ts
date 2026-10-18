@@ -189,7 +189,12 @@ export async function dispatchRun(userId: string, g: UserGraph, req: RunRequest)
       const child = spawn(spec.bin[0], spec.args(req.prompt, req.dir), { cwd: req.dir, env: process.env, stdio: ['ignore', 'pipe', 'pipe'] });
       const timer = setTimeout(() => { push('\n[zivbot] timed out after 15 minutes\n'); child.kill('SIGKILL'); }, 15 * 60_000);
       child.stdout.on('data', (d) => push(humanize(req.kind, d.toString())));
-      child.stderr.on('data', (d) => push(d.toString()));
+      // stderr carries the CLI's own housekeeping (skill loading, malloc notices, ANSI): keep real errors only
+      child.stderr.on('data', (d) => {
+        const keep = d.toString().replace(/\x1b\[[0-9;]*m/g, '').split('\n')
+          .filter((l: string) => l.trim() && !/failed to load skill|SKILL\.md|MallocStackLogging|^\s*\d{4}-\d\d-\d\dT[\d:.]+Z\s+(INFO|WARN|DEBUG)/.test(l));
+        if (keep.length) push(keep.join('\n') + '\n');
+      });
       child.on('error', (e) => { push(`\n[zivbot] ${e.message}\n`); resolve(127); });
       child.on('close', (c) => { clearTimeout(timer); resolve(c ?? 1); });
     });

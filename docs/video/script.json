@@ -1,0 +1,86 @@
+[
+ {
+  "id": "s01",
+  "text": "This is ZivBot. It connects your apps, and your own AI subscriptions, like Codex, Claude Code and OpenCode, into one FalkorDB graph. Small agents we call dots read that graph, decide, and act on it. Everything you are about to see is the real, running app.",
+  "cfg": 0.35,
+  "exaggeration": 0.5
+ },
+ {
+  "id": "s02",
+  "text": "First, connect data. I add a synthetic company called Lumen Labs: its mail, calendar, Slack, Notion, tickets, and a real git repository. ZivBot also finds the coding agents installed on this machine. Those are my real subscriptions, and the dots can hand work to them.",
+  "cfg": 0.35,
+  "exaggeration": 0.5
+ },
+ {
+  "id": "s03",
+  "text": "And real public data too. Here is FalkorDB's own GitHub repository. Its contributors, their commits, and the repo become nodes and edges, right next to the company data.",
+  "cfg": 0.35,
+  "exaggeration": 0.5
+ },
+ {
+  "id": "s04",
+  "text": "Everything lands in FalkorDB. People, customers, systems, tickets, decisions, and even the chat itself. Every user gets their own isolated graph. This is the live schema, with its full text and vector indexes.",
+  "cfg": 0.35,
+  "exaggeration": 0.5
+ },
+ {
+  "id": "s05",
+  "text": "FalkorDB's own algorithms run as tools. PageRank finds the systems everything leans on. Label propagation finds the real working groups, from who actually works together.",
+  "cfg": 0.35,
+  "exaggeration": 0.5
+ },
+ {
+  "id": "s06",
+  "text": "Now a real question. What is blocking the EU launch? Ziv walks blocked-by links upstream, then the systems the launch depends on, and finds the root: a decision that is waiting on me.",
+  "cfg": 0.35,
+  "exaggeration": 0.5
+ },
+ {
+  "id": "s07",
+  "text": "Show path opens the exact Cypher behind that answer, with row counts and timings. No black box. Every answer can be traced back to the graph.",
+  "cfg": 0.35,
+  "exaggeration": 0.5
+ },
+ {
+  "id": "s08",
+  "text": "What if Hana is out next week? Ziv takes her out of the graph and looks at what breaks: two systems nobody else knows, and a P1 that needs a new owner, so it proposes one.",
+  "cfg": 0.35,
+  "exaggeration": 0.5
+ },
+ {
+  "id": "s09",
+  "text": "Before I decide, it weighs each option on the graph. Delay, and the EU launch slips while three people wait on a date. Drop the old hardware, and Brightwave, a hundred and eighty four thousand dollar customer, is hit.",
+  "cfg": 0.35,
+  "exaggeration": 0.5
+ },
+ {
+  "id": "s10",
+  "text": "Now, act. Fix LUM-142. Ziv hands it to Forge, the engineering dot. Forge picks which of my subscriptions should do it, from a skill graph of past wins and losses. I approve Codex.",
+  "cfg": 0.35,
+  "exaggeration": 0.5
+ },
+ {
+  "id": "s11",
+  "text": "Codex works on a branch in the real repository. The tests go from one of three, to three of three, and Forge reports back. Nothing runs, or gets sent, until I approve it.",
+  "cfg": 0.35,
+  "exaggeration": 0.5
+ },
+ {
+  "id": "s12",
+  "text": "Dots are cheap to make. I add a finance dot from a template. They all share one graph memory, and they message each other. This chip is Ziv handing work to Forge.",
+  "cfg": 0.35,
+  "exaggeration": 0.5
+ },
+ {
+  "id": "s13",
+  "text": "Every graph tool is also an MCP server. Here, a real Codex session calls ZivBot's critical path tool on my graph, and answers from it.",
+  "cfg": 0.35,
+  "exaggeration": 0.5
+ },
+ {
+  "id": "s14",
+  "text": "ZivBot. Agents that act on connected data, with FalkorDB at the center. Try it live at zivbot dot vercel dot app. The code is on GitHub.",
+  "cfg": 0.35,
+  "exaggeration": 0.5
+ }
+]

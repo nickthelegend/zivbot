@@ -6,7 +6,9 @@
 
 > 🏁 **Graph Hacks: Context for AI Agents** (WeMakeDevs × FalkorDB)
 > **Track:** Agents That Act on Connected Data (primary). It also covers Agent Memory and Coordination: per-user graphs, episodic/semantic/procedural memory, and dot-to-dot handoffs.
-> **Demo video:** _link_ · **Live:** [zivbot.vercel.app](https://zivbot.vercel.app) · **Built in:** Oct 15–18, 2026
+> **Demo video (2:47):** [watch](https://zivbot.vercel.app/demo.mp4) · [file](docs/zivbot-demo.mp4) · **Live:** [zivbot.vercel.app](https://zivbot.vercel.app) · **Built in:** Oct 15–18, 2026
+
+<p align="center"><a href="https://zivbot.vercel.app/demo.mp4"><b>▶ Watch the 3-minute demo</b></a>: the real app, a real Codex run, Codex calling ZivBot over MCP. Voiceover by Chatterbox TTS.</p>
 
 <p align="center"><img src="docs/screenshots/chat.png" width="880" alt="Ziv triaging from the graph"></p>
 
@@ -559,6 +561,17 @@ desktop/           Electron app
 mobile/            Expo Android/iOS app
 demo/              lumen-payments: the synthetic repo the coding agents fix
 ```
+
+## How the demo video was made
+
+There are no mocks in it. `desktop/scripts/record.cjs` drives the real app in an offscreen Electron window against the local API and FalkorDB, capturing 10 frames a second. In that recording it:
+
+- connects the demo company and FalkorDB's public GitHub repo;
+- asks the questions;
+- approves a real Codex run on `demo/lumen-payments`, where the tests go from 1/3 to 3/3;
+- runs a real `codex exec` session that calls ZivBot's MCP `critical_path` tool.
+
+The voiceover is [Chatterbox TTS](https://github.com/resemble-ai/chatterbox) running locally (`docs/video/tts.py`, from the lines in `docs/video/script.json`). `scripts/make-video.py` fits each scene to its line and burns in the captions.
 
 ## Built with AI assistance (rule 11)
 
