@@ -34,7 +34,7 @@ export function ConnectModal() {
         </div>
         <div className="modal-search">
           <div className="search-box"><Icon.search size={16} /><input autoFocus placeholder="Search across apps and skills" value={q} onChange={(e) => setQ(e.target.value)} /></div>
-          <button className="btn templates" onClick={() => set({ connectOpen: false, newDotOpen: true })}><span className="tpl-dot" /> Dot templates <Icon.external size={13} /></button>
+          <button className="btn templates" onClick={() => set({ connectOpen: false, newDotOpen: true })}><span className="tpl-dot" /> Ziv templates <Icon.external size={13} /></button>
         </div>
         <div className="cat-chips">
           {CHIPS.map((c) => <button key={c} className={cat === c ? 'on' : ''} onClick={() => setCat(c)}>{c}</button>)}
@@ -61,7 +61,7 @@ export function ConnectModal() {
   );
 }
 
-/** Your graph's tools, from any MCP client — the same ones the dots use. */
+/** Your graph's tools, from any MCP client — the same ones the Zivs use. */
 function McpBox() {
   const url = `${API_BASE || location.origin}/mcp?user=${userId}`;
   const cmd = `claude mcp add --transport http zivbot "${url}"`;
@@ -119,7 +119,7 @@ function AppRow({ c, open, onToggle }: { c: Connector; open: boolean; onToggle: 
               {f.env && <small>or set <code>{f.env}</code> in .env</small>}
             </label>
           ))}
-          {c.actions.length > 0 && <div className="app-actions">Gives your dots: {c.actions.map((a) => <code key={a.name}>{a.name}{a.mutates ? '*' : ''}</code>)} <small>* asks first</small></div>}
+          {c.actions.length > 0 && <div className="app-actions">Gives your Zivs: {c.actions.map((a) => <code key={a.name}>{a.name}{a.mutates ? '*' : ''}</code>)} <small>* asks first</small></div>}
           <div className="row-end">
             {connected && <button className="btn ghost sm" onClick={() => void api.disconnect(c.id).then(loadConnectors)}>Disconnect</button>}
             <button className="btn primary sm" disabled={busy} onClick={() => void go()}>{busy ? 'Connecting…' : connected ? 'Re-sync' : 'Connect'}</button>

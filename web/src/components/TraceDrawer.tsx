@@ -6,7 +6,7 @@ import { Icon } from './icons';
 
 type Trace = Awaited<ReturnType<typeof api.answer>>;
 
-/** "Show path": the Cypher a dot ran and the subgraph its answer was built from. */
+/** "Show path": the Cypher a Ziv ran and the subgraph its answer was built from. */
 export function TraceDrawer() {
   const id = useStore((s) => s.trace);
   const [t, setT] = useState<Trace | null>(null);
@@ -27,7 +27,7 @@ export function TraceDrawer() {
       <div className="drawer" onClick={(e) => e.stopPropagation()}>
         <div className="drawer-head">
           <div>
-            <div className="drawer-kicker"><Icon.path size={14} /> How {t?.dot || 'the dot'} got this</div>
+            <div className="drawer-kicker"><Icon.path size={14} /> How {t?.dot || 'the Ziv'} got this</div>
             <div className="drawer-title">{t?.question || '…'}</div>
             {t && (
               <div className="drawer-meta">

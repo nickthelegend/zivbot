@@ -41,7 +41,7 @@ export function App() {
       <main className="main">
         {view !== 'chat' && <button className="mobile-home icon-btn round" onClick={() => set({ view: 'chat', mobileList: true })} aria-label="Back to chats"><Icon.chevron size={16} className="flip" /></button>}
         <div className="top-tools">
-          {view === 'chat' && <button aria-label="Dot details" className={`icon-btn ${rightOpen ? 'on' : ''}`} onClick={() => set({ rightOpen: !rightOpen })} title="Dot details"><Icon.panel size={17} /></button>}
+          {view === 'chat' && <button aria-label="Ziv details" className={`icon-btn ${rightOpen ? 'on' : ''}`} onClick={() => set({ rightOpen: !rightOpen })} title="Ziv details"><Icon.panel size={17} /></button>}
         </div>
         {view === 'chat' && <Chat />}
         {view === 'graph' && <GraphView />}

@@ -4,8 +4,8 @@ import { useStore, set, get, send } from '../store';
 import { Avatar } from './Avatar';
 
 /**
- * Call mode: talk to a dot hands-free. Speech recognition listens, a pause sends,
- * and new replies from the dot are read aloud (browser speech APIs, no server).
+ * Call mode: talk to a Ziv hands-free. Speech recognition listens, a pause sends,
+ * and new replies from the Ziv are read aloud (browser speech APIs, no server).
  */
 export function CallBar({ conv, name, avatar, color, messages }: { conv: string; name: string; avatar?: string; color?: string; messages: Message[] }) {
   const call = useStore((s) => s.call);

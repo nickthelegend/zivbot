@@ -1,5 +1,5 @@
 /**
- * Dot avatars: a round body with big oval eyes, like a friendly blob.
+ * Ziv avatars: a round body with big oval eyes, like a friendly blob.
  * Each preset has its own colour and eye style.
  */
 const STYLES: Record<string, { color: string; eyes: 'tall' | 'round' | 'side' | 'sleepy'; ring?: boolean }> = {
@@ -10,7 +10,7 @@ const STYLES: Record<string, { color: string; eyes: 'tall' | 'round' | 'side' | 
   ghost: { color: '#e5e5e5', eyes: 'side' },
 };
 
-/** Hand-made character art for the preset dots (generated for ZivBot); custom dots use the vector blob. */
+/** Hand-made character art for the preset Zivs (generated for ZivBot); custom Zivs use the vector blob. */
 const ART = new Set(['ziv', 'forge', 'scout', 'ledger']);
 
 export function Avatar({ avatar = 'ziv', color, size = 36, busy, badge }: { avatar?: string; color?: string; size?: number; busy?: boolean; badge?: boolean }) {
@@ -65,7 +65,7 @@ export function AvatarStack({ dots, size = 22 }: { dots: { avatar?: string; colo
   );
 }
 
-/** GrokBot-style group avatar: up to four dots clustered in one circle. */
+/** GrokBot-style group avatar: up to four Zivs clustered in one circle. */
 export function AvatarCluster({ dots, size = 38 }: { dots: { avatar?: string; color?: string; uid: string }[]; size?: number }) {
   const d = dots.slice(0, 4);
   const small = Math.round(size * (d.length > 2 ? 0.52 : 0.62));

@@ -8,7 +8,7 @@ import type { ConnectorDef } from './types.ts';
 /**
  * "Connect almost everything": any MCP server becomes a connector. Its tools
  * are written into the graph as :Tool nodes PROVIDED_BY the :Connector, so
- * the dot selects tools by querying the graph, and calls them over MCP.
+ * the Ziv selects tools by querying the graph, and calls them over MCP.
  * Tools whose names look read-only run directly; anything else needs approval.
  */
 
@@ -63,7 +63,7 @@ export const mcpConnector: ConnectorDef = {
   id: 'mcp',
   name: 'Any MCP server',
   category: 'Agents',
-  description: 'Plug in any Model Context Protocol server — Notion, Linear, Figma, Postgres, filesystem… its tools become your dots’ tools.',
+  description: 'Plug in any Model Context Protocol server — Notion, Linear, Figma, Postgres, filesystem… its tools become your Zivs’ tools.',
   icon: 'modelcontextprotocol',
   auth: 'none',
   recommended: true,

@@ -7,11 +7,11 @@ import { scheduleEmbed } from './semantic.ts';
 
 /**
  * Agent memory, all in the user's graph:
- *  - Dots (agents) are MEMBER_OF conversations: their direct chat with you,
- *    group chats, and dot↔dot exchanges.
- *  - Episodic: every message is an :Episode IN a conversation, BY a dot,
+ *  - Zivs (agents) are MEMBER_OF conversations: their direct chat with you,
+ *    group chats, and Ziv↔Ziv exchanges.
+ *  - Episodic: every message is an :Episode IN a conversation, BY a Ziv,
  *    chained with NEXT and linked to the entities it MENTIONS — so "what did
- *    we say about Brightwave" is a traversal, across every dot.
+ *    we say about Brightwave" is a traversal, across every Ziv.
  *  - Answers: provenance for each reply (USED → the nodes it was built from).
  * Facts and Procedures (semantic / procedural memory) come from the remember tool.
  */
@@ -20,7 +20,7 @@ export type Role = 'user' | 'assistant' | 'system' | 'agent';
 export type Message = { uid: string; conv: string; role: Role; text: string; cards?: Card[]; at: number; answer?: string; dot?: string; proactive?: boolean };
 
 export const DOT_PRESETS = [
-  { name: 'Ziv', avatar: 'ziv', color: '#ff7a1a', role: 'Chief of staff — triages everything, decides what to act on, and coordinates the other dots' },
+  { name: 'Ziv', avatar: 'ziv', color: '#ff7a1a', role: 'Chief of staff — triages everything, decides what to act on, and coordinates the other Zivs' },
   { name: 'Forge', avatar: 'forge', color: '#22d3ee', role: 'Engineering lead — turns tickets into fixes with your coding-agent subscriptions' },
   { name: 'Scout', avatar: 'scout', color: '#a78bfa', role: 'Researcher — answers questions from the company graph and the web, writes briefs' },
   { name: 'Ledger', avatar: 'ledger', color: '#34d399', role: 'Customer & finance — keeps customers happy, invoices right, and investors updated' },
@@ -35,7 +35,7 @@ export async function listDots(g: UserGraph) {
             c.uid AS conv, e.text AS lastText, e.at AS lastAt
      ORDER BY d.createdAt`,
     {},
-    '~list dots',
+    '~list Zivs',
   );
 }
 
@@ -60,7 +60,7 @@ export async function listConversations(g: UserGraph) {
 export async function createDot(g: UserGraph, p: { name: string; avatar: string; role: string; color?: string; stage?: string }) {
   const d = uid('dot');
   const c = uid('conv');
-  await upsertNodes(g, 'Dot', [{ uid: d, props: { name: p.name, avatar: p.avatar, role: p.role, color: p.color, stage: p.stage || 'ready', createdAt: Date.now() }, search: `${p.name} dot agent ${p.role}` }]);
+  await upsertNodes(g, 'Dot', [{ uid: d, props: { name: p.name, avatar: p.avatar, role: p.role, color: p.color, stage: p.stage || 'ready', createdAt: Date.now() }, search: `${p.name} Ziv agent ${p.role}` }]);
   await upsertNodes(g, 'Conversation', [{ uid: c, props: { name: p.name, kind: 'direct', createdAt: Date.now() } }], false);
   await link(g, 'Dot', 'MEMBER_OF', 'Conversation', [{ from: d, to: c }]);
   return { dot: d, conv: c };
@@ -74,12 +74,12 @@ export async function createGroup(g: UserGraph, dots: string[], name?: string) {
   return c;
 }
 
-/** The dot↔dot exchange conversation between two dots (created on first contact). */
+/** The Ziv↔Ziv exchange conversation between two Zivs (created on first contact). */
 export async function exchangeBetween(g: UserGraph, a: string, b: string) {
   const hit = await g.one(
     `MATCH (:Dot {uid:$a})-[:MEMBER_OF]->(c:Conversation {kind:'exchange'})<-[:MEMBER_OF]-(:Dot {uid:$b}) RETURN c.uid AS uid`,
     { a, b },
-    '~find dot↔dot exchange',
+    '~find Ziv↔Ziv exchange',
   );
   if (hit) return hit.uid as string;
   const c = uid('xchg');
@@ -89,7 +89,7 @@ export async function exchangeBetween(g: UserGraph, a: string, b: string) {
 }
 
 export async function updateDot(g: UserGraph, dot: string, props: Record<string, unknown>) {
-  await g.q(`MATCH (d:Dot {uid:$d}) SET d += $p`, { d: dot, p: props }, '~update dot');
+  await g.q(`MATCH (d:Dot {uid:$d}) SET d += $p`, { d: dot, p: props }, '~update Ziv');
   if (props.name) await g.q(`MATCH (d:Dot {uid:$d})-[:MEMBER_OF]->(c:Conversation {kind:'direct'}) SET c.name = $n`, { d: dot, n: props.name });
 }
 
@@ -98,7 +98,7 @@ export async function getDot(g: UserGraph, dot: string) {
     `MATCH (d:Dot {uid:$d}) OPTIONAL MATCH (d)-[:MEMBER_OF]->(c:Conversation {kind:'direct'})
      RETURN d.uid AS uid, d.name AS name, d.avatar AS avatar, d.role AS role, d.stage AS stage, d.color AS color, c.uid AS conv`,
     { d: dot },
-    '~load dot',
+    '~load Ziv',
   );
 }
 
@@ -141,7 +141,7 @@ async function appendMessage(userId: string, g: UserGraph, m: Omit<Message, 'uid
     await linkAny(g, 'Episode', 'MENTIONS', mentionsIn(dict, msg.text).map((to) => ({ from: msg.uid, to })));
   }
   if (msg.answer) await link(g, 'Episode', 'ANSWERED_WITH', 'Answer', [{ from: msg.uid, to: msg.answer }]);
-  // @mentions of dots and plugins are edges too
+  // @mentions of Zivs and plugins are edges too
   if (msg.role === 'user' && msg.text.includes('@')) {
     await g.q(
       `MATCH (e:Episode {uid:$e})
@@ -173,7 +173,7 @@ export async function history(g: UserGraph, conv: string, limit = 200): Promise<
   return rows.reverse().map((r) => ({ ...r, conv, cards: r.cards ? JSON.parse(r.cards) : undefined }));
 }
 
-/** Recent turns + memories related to what was just said — the dot's working context. */
+/** Recent turns + memories related to what was just said — the Ziv's working context. */
 export async function workingContext(g: UserGraph, conv: string, text: string) {
   const recent = (await history(g, conv, 12)).filter((m) => m.role !== 'system');
   const dict = await loadDictionary(g);
@@ -193,7 +193,7 @@ export async function workingContext(g: UserGraph, conv: string, text: string) {
        OPTIONAL MATCH (e)-[:BY]->(d:Dot)
        RETURN e.role AS role, e.text AS text, e.at AS at, d.name AS dot ORDER BY e.at DESC LIMIT 5`,
       { about, conv },
-      '~earlier conversations about the same things (any dot)',
+      '~earlier conversations about the same things (any Ziv)',
     )
     : [];
   return { recent, memories, earlier, about };

@@ -14,7 +14,7 @@ const AGO = (t?: number) => {
   return days >= 7 ? `${Math.round(days / 7)} week${days >= 14 ? 's' : ''} ago` : `${days} day${days > 1 ? 's' : ''} ago`;
 };
 
-/** The ChatGPT-dots profile card: who this dot is, its computer, what it's doing, what it made. */
+/** The ChatGPT-Zivs profile card: who this Ziv is, its computer, what it's doing, what it made. */
 export function ProfilePanel() {
   const conv = useStore((s) => s.conversations.find((c) => c.uid === s.active));
   const dots = useStore((s) => s.dots);
@@ -72,7 +72,7 @@ export function ProfilePanel() {
         <button className="computer" onClick={() => set({ view: 'activity' })}>
           <Icon.monitor size={16} />
           <div className="grow">
-            <div>{isGroup ? 'Your dots’' : `${dot?.name || 'Your dot'}’s`} computer</div>
+            <div>{isGroup ? 'Your Zivs’' : `${dot?.name || 'Your Ziv'}’s`} computer</div>
             <div className="bar"><i className={busy ? 'busy' : ''} style={{ width: busy ? '64%' : '100%' }} /></div>
           </div>
           <div className={`screen ${busy ? 'on' : ''}`}>{screen.map((l, i) => <div key={i}>{l.slice(0, 44)}</div>)}</div>
@@ -106,7 +106,7 @@ export function ProfilePanel() {
 
       <div className="profile-card small">
         <div className="section-title first"><Icon.brain size={14} /> Memory <small>{memory.length}</small></div>
-        {memory.length === 0 && <div className="muted-line">Say “remember that …” and every dot will use it.</div>}
+        {memory.length === 0 && <div className="muted-line">Say “remember that …” and every Ziv will use it.</div>}
         {memory.slice(0, 4).map((m) => <div key={m.uid} className="memory-row"><span className="tone tone-gray">{m.kind}</span> {m.text}</div>)}
         {stats && <button className="graph-footer" onClick={() => set({ view: 'graph' })}><Icon.database size={13} /> FalkorDB · <code>{stats.graph}</code> · {stats.nodes} nodes · {stats.edges} edges</button>}
       </div>
@@ -126,7 +126,7 @@ function CustomizeDot({ dot, onDone }: { dot: { uid: string; name: string; role:
         <input type="color" value={color} onChange={(e) => setColor(e.target.value)} />
       </div>
       <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Name" />
-      <textarea value={role} onChange={(e) => setRole(e.target.value)} rows={3} placeholder="What is this dot for?" />
+      <textarea value={role} onChange={(e) => setRole(e.target.value)} rows={3} placeholder="What is this Ziv for?" />
       <button className="btn primary sm" onClick={() => void api.updateDot(dot.uid, { name, role, avatar, color }).then(() => { toast('Saved'); onDone(); })}>Save</button>
     </div>
   );

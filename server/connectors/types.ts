@@ -1,9 +1,9 @@
 import type { UserGraph } from '../graph.ts';
 
 /**
- * A connector maps one app into the user's graph (sync) and gives dots
+ * A connector maps one app into the user's graph (sync) and gives Zivs
  * hands inside that app (actions). Actions with `mutates: true` never run
- * directly — the dot creates an approval Draft, and the action runs when
+ * directly — the Ziv creates an approval Draft, and the action runs when
  * the user approves it.
  */
 

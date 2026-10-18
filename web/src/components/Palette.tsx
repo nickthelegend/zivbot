@@ -10,7 +10,7 @@ type Row =
   | { kind: 'action'; id: string; title: string; run: () => void; icon: keyof typeof Icon };
 
 /**
- * ⌘K: jump to any dot or group (⌘1–⌘9 work from anywhere), search your
+ * ⌘K: jump to any Ziv or group (⌘1–⌘9 work from anywhere), search your
  * FalkorDB graph (people, tickets, systems, decisions…), or run an action.
  */
 export function Palette() {
@@ -59,7 +59,7 @@ export function Palette() {
       { kind: 'action', id: 'graph', title: 'Open your graph', icon: 'graph', run: () => set({ view: 'graph', mobileList: false }) },
       { kind: 'action', id: 'activity', title: 'Activity & approvals', icon: 'bolt', run: () => set({ view: 'activity', mobileList: false }) },
       { kind: 'action', id: 'connect', title: 'Connect apps', icon: 'plus', run: () => set({ connectOpen: true }) },
-      { kind: 'action', id: 'newdot', title: 'New dot or group', icon: 'users', run: () => set({ newDotOpen: true }) },
+      { kind: 'action', id: 'newdot', title: 'New Ziv or group', icon: 'users', run: () => set({ newDotOpen: true }) },
     ].filter((a) => !ql || a.title.toLowerCase().includes(ql)) as Row[];
     return [...convs, ...graph, ...actions];
   }, [ordered, nodes, q]);
@@ -84,7 +84,7 @@ export function Palette() {
           <input
             ref={input}
             value={q}
-            placeholder="Search dots, chats and your graph"
+            placeholder="Search Zivs, chats and your graph"
             onChange={(e) => { setQ(e.target.value); setI(0); }}
             onKeyDown={(e) => {
               if (e.key === 'ArrowDown') { e.preventDefault(); setI((i + 1) % rows.length); }

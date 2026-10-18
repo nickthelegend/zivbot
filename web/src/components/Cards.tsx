@@ -110,11 +110,11 @@ function TimelineCard({ card }: { card: Extract<Card, { type: 'timeline' }> }) {
   );
 }
 
-/** ChatGPT dots' "Customize your dot ›" chip. */
+/** ChatGPT Zivs' "Customize your Ziv ›" chip. */
 function CustomizeChip() {
   return (
     <button className="customize-chip" onClick={() => set({ rightOpen: true, customizeOpen: true })}>
-      <Icon.users size={16} /> Customize your dot <Icon.chevron size={14} />
+      <Icon.users size={16} /> Customize your Ziv <Icon.chevron size={14} />
     </button>
   );
 }

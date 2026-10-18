@@ -10,7 +10,7 @@ import { config } from './config.ts';
 const exec = promisify(execFile);
 
 /**
- * The agent fleet: the coding-agent subscriptions installed on the dot's
+ * The agent fleet: the coding-agent subscriptions installed on the Ziv's
  * computer, as :Agent nodes. ZivBot routes work to them with a graph query
  * (past runs on the same systems, quota state, your stated preferences) and
  * runs them headlessly — the invocations are ported from Loom's adapters.

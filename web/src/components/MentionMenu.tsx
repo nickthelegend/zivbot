@@ -8,7 +8,7 @@ export type MentionItem =
   | { kind: 'dot'; id: string; name: string; dot: Dot }
   | { kind: 'plugin'; id: string; name: string; plugin: Connector };
 
-/** Everything you can @-mention: your dots, then your plugins (connected first). */
+/** Everything you can @-mention: your Zivs, then your plugins (connected first). */
 export function useMentionItems(query: string): MentionItem[] {
   const dots = useStore((s) => s.dots);
   const connectors = useStore((s) => s.connectors);
@@ -49,7 +49,7 @@ export function MentionMenu({ items, index, onPick, onHover, hovered }: { items:
               {m.name}
               {m.kind === 'plugin' && <span className={`m-status s-${pluginStatus(m.plugin).replace(' ', '-')}`}>{pluginStatus(m.plugin)}</span>}
             </span>
-            <span className="m-kind">{m.kind === 'dot' ? 'Dot' : 'Plugin'}</span>
+            <span className="m-kind">{m.kind === 'dot' ? 'Ziv' : 'Plugin'}</span>
           </button>
         ))}
       </div>

@@ -15,7 +15,7 @@ export const zivHome = () => process.env.ZIV_HOME || join(homedir(), '.zivbot');
 export const workspaceDir = (userId: string) => join(zivHome(), 'workspaces', userId.replace(/[^a-zA-Z0-9_-]/g, ''));
 
 /**
- * The demo workspace's payments-api lives in a real git repo on the dot's
+ * The demo workspace's payments-api lives in a real git repo on the Ziv's
  * computer, so coding agents can actually change it. History is authored by
  * the (synthetic) Lumen engineers, which is where "who knows this code" comes from.
  */

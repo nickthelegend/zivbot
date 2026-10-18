@@ -4,7 +4,7 @@ import { useStore, set, openConversation } from '../store';
 import { Avatar, AvatarCluster } from './Avatar';
 import { AppIcon, Icon } from './icons';
 
-/** GrokBot sidebar: search + new at the top, your dots, and "Connect apps" at the bottom. */
+/** GrokBot sidebar: search + new at the top, your Zivs, and "Connect apps" at the bottom. */
 export function Sidebar() {
   const conversations = useStore((s) => s.conversations);
   const dots = useStore((s) => s.dots);
@@ -37,7 +37,7 @@ export function Sidebar() {
             <button aria-label="New" className="icon-btn round" onClick={() => setMenu(menu === 'new' ? null : 'new')} title="New"><Icon.plus size={17} /></button>
             {menu === 'new' && (
               <div className="menu down" onMouseLeave={() => setMenu(null)}>
-                <button onClick={() => go({ newDotOpen: true })}><Icon.plus size={15} /> New dot</button>
+                <button onClick={() => go({ newDotOpen: true })}><Icon.plus size={15} /> New Ziv</button>
                 <button onClick={() => go({ newDotOpen: true })}><Icon.users size={15} /> New group chat</button>
                 <hr />
                 <button onClick={() => go({ view: 'graph', mobileList: false })}><Icon.graph size={15} /> Memory graph</button>
@@ -53,7 +53,7 @@ export function Sidebar() {
           if (!rows.length) return null;
           return (
             <div key={kind} className="conv-section">
-              <div className="conv-label">{kind === 'direct' ? 'Dots' : 'Groups'}</div>
+              <div className="conv-label">{kind === 'direct' ? 'Zivs' : 'Groups'}</div>
         {rows.map((c) => {
           const isGroup = c.kind === 'group';
           const d = c.dots[0];

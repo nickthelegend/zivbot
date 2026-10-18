@@ -11,12 +11,12 @@ import {
 import { clip } from './util.ts';
 
 /**
- * Dots think here. Every Cypher statement run while a dot works is captured
+ * Zivs think here. Every Cypher statement run while a Ziv works is captured
  * in a trace; the reply is stored as an Episode linked to an Answer node that
  * USED every graph node the turn touched — the path behind the answer.
  *
- * Dots also talk to each other: message_dot opens (or reuses) an exchange
- * conversation between two dots in the graph, the other dot works on it with
+ * Zivs also talk to each other: message_dot opens (or reuses) an exchange
+ * conversation between two Zivs in the graph, the other Ziv works on it with
  * the same shared memory, and both of your chats get a "Messaged …" chip.
  */
 
@@ -26,11 +26,11 @@ const toolByName = (n: string) => allTools().find((t) => t.name === n) || builti
 type Reply = { text: string; cards: Card[]; tools: string[]; mode: string; answer: string };
 export type DotInfo = { uid: string; name: string; role: string; stage?: string; conv?: string; avatar?: string; color?: string };
 
-/** Run one dot over one input and return its reply (does not post it). */
+/** Run one Ziv over one input and return its reply (does not post it). */
 export async function think(userId: string, dot: DotInfo, conv: string, text: string, opts: { from?: string; inGroup?: boolean } = {}): Promise<Reply> {
   const g = await userGraph(userId);
   publish(userId, { type: 'thinking', dot: dot.uid, conv, on: true });
-  // stream the steps and every node the Cypher touches, so the UI can draw the dot thinking
+  // stream the steps and every node the Cypher touches, so the UI can draw the Ziv thinking
   const sent = new Set<string>();
   const trace: Trace = {
     queries: [], touched: new Set(),
@@ -87,7 +87,7 @@ export async function handleUserMessage(userId: string, convUid: string, text: s
     return postMessage(userId, g, { conv: convUid, role: 'assistant', dot: dot.uid, text: r.text, cards: r.cards, answer: r.answer });
   }
 
-  // Group chat: the dots whose role fits the message answer; others stay quiet.
+  // Group chat: the Zivs whose role fits the message answer; others stay quiet.
   const responders = pickResponders(dots, text);
   publish(userId, { type: 'working', conv: convUid, dots: responders.map((d) => d.name) });
   const replies = await Promise.all(responders.map(async (d) => {
@@ -123,18 +123,18 @@ function dedupeCards(cards: Card[]) {
   return rest;
 }
 
-// ------------------------------------------------------------------ dot ↔ dot
+// ------------------------------------------------------------------ Ziv ↔ Ziv
 
 /**
- * `from` messages another dot. The exchange is a Conversation of kind
- * 'exchange' with both dots as members; the recipient thinks with the shared
+ * `from` messages another Ziv. The exchange is a Conversation of kind
+ * 'exchange' with both Zivs as members; the recipient thinks with the shared
  * graph and replies there. Both direct chats get a chip that opens the
  * exchange. Returns the recipient's reply (text + cards) to the sender.
  */
 export async function messageDot(userId: string, from: DotInfo, toName: string, text: string): Promise<{ text: string; cards: Card[]; to?: DotInfo; answer?: string }> {
   const g = await userGraph(userId);
   const to = (await listDots(g)).find((d) => d.name.toLowerCase() === String(toName).toLowerCase().trim()) as DotInfo | undefined;
-  if (!to) return { text: `There's no dot called ${toName}.`, cards: [] };
+  if (!to) return { text: `There's no Ziv called ${toName}.`, cards: [] };
   if (to.uid === from.uid) return { text: 'That is me.', cards: [] };
   const xchg = await exchangeBetween(g, from.uid, to.uid);
   await postMessage(userId, g, { conv: xchg, role: 'agent', dot: from.uid, text });
@@ -159,7 +159,7 @@ async function chip(userId: string, g: UserGraph, conv: string | undefined, xchg
 
 const messageDotTool = {
   name: 'message_dot',
-  description: 'Message another of my dots and get their reply. Delegate to the specialist: engineering fixes → the engineering dot, research/briefs → the research dot, customer/finance → that dot. They share the same graph memory.',
+  description: 'Message another of my Zivs and get their reply. Delegate to the specialist: engineering fixes → the engineering Ziv, research/briefs → the research Ziv, customer/finance → that Ziv. They share the same graph memory.',
   params: { type: 'object', properties: { dot: { type: 'string' }, message: { type: 'string' } }, required: ['dot', 'message'] },
 };
 
@@ -174,7 +174,7 @@ Rules:
 - Delegate to a specialist dot with message_dot when the work is theirs.
 - Be brief and warm. Lead with the direct answer in one sentence (yes/no, a name, a number, a date), then the evidence. Short markdown: bold names, numbered lists for rankings. Never invent people, numbers, dates or tickets; if the graph doesn't hold it, say so plainly.
 - Call at most two tools before answering.
-${from ? `This message is from your colleague dot ${from}, not the user. Do the work and reply to them concisely.` : ''}
+${from ? `This message is from your colleague Ziv ${from}, not the user. Do the work and reply to them concisely.` : ''}
 Other dots: ${others.join('; ') || 'none'}.
 Memories that apply:\n${wc.memories.map((m) => `- (${m.kind}) ${m.text}`).join('\n') || '- none'}
 Earlier conversations on these topics:\n${wc.earlier.map((e) => `- ${e.dot || 'you'}/${e.role}: ${clip(e.text, 160)}`).join('\n') || '- none'}
@@ -233,7 +233,7 @@ export async function startOnboarding(userId: string, dot: DotInfo) {
   const g = await userGraph(userId);
   await updateDot(g, dot.uid, { stage: 'onboard:user' });
   const say = (text: string) => postMessage(userId, g, { conv: dot.conv!, role: 'assistant', dot: dot.uid, text });
-  await say("Hey! I'm your new dot.");
+  await say("Hey! I'm your new Ziv.");
   await say("Message me anytime. I'll keep things moving even when we're not talking, and check in with updates or questions.");
   await say('First things first — what should I call you?');
 }

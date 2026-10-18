@@ -5,7 +5,7 @@ import { RunCard } from './Cards';
 import { AppIcon, Icon } from './icons';
 import { ForceGraph } from './ForceGraph';
 
-/** Everything the dots did and want to do: approvals, runs on your agents, routing. */
+/** Everything the Zivs did and want to do: approvals, runs on your agents, routing. */
 export function ActivityView() {
   const runs = useStore((s) => s.runs);
   const draftStatus = useStore((s) => s.draftStatus);
@@ -26,7 +26,7 @@ export function ActivityView() {
     <div className="activity-view">
       <div className="act-col">
         <h2>Waiting on you <small>{pending.length}</small></h2>
-        {pending.length === 0 && <div className="muted-line">Nothing to approve. Dots never send, run or book without you.</div>}
+        {pending.length === 0 && <div className="muted-line">Nothing to approve. Zivs never send, run or book without you.</div>}
         {pending.map((d) => (
           <div key={d.uid} className="act-item">
             <span className="tone tone-amber">{d.kind}</span>
@@ -54,7 +54,7 @@ export function ActivityView() {
       </div>
       <div className="act-col">
         <h2>Watch rules <small>{rules?.rules.length ?? 0}</small></h2>
-        <div className="muted-line">Graph patterns your dots check in the background — they speak up the moment one matches.</div>
+        <div className="muted-line">Graph patterns your Zivs check in the background — they speak up the moment one matches.</div>
         {rules?.rules.map((r) => (
           <div key={r.uid} className={`act-item rule ${r.active ? '' : 'dim'}`}>
             <span className="tone tone-amber">rule</span>

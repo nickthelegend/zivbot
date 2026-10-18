@@ -10,10 +10,10 @@ import { insights } from './insights.ts';
 import { evaluateRules } from './rules.ts';
 
 /**
- * "I keep working while you're away." On a timer, each user's chief dot
+ * "I keep working while you're away." On a timer, each user's chief Ziv
  * re-runs triage over the graph and only speaks up when what needs you has
  * changed (a :Notice node remembers the last fingerprint). Finished coding
- * runs report back into the chat of the dot that asked for them.
+ * runs report back into the chat of the Ziv that asked for them.
  */
 export function startProactive() {
   if (config.proactiveMs > 0) {

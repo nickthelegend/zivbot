@@ -1,11 +1,11 @@
-<p align="center"><img src="docs/hero.jpg" alt="ZivBot — dots that act on your graph" width="100%"></p>
+<p align="center"><img src="docs/hero.jpg" alt="ZivBot — Zivs that act on your graph" width="100%"></p>
 
 # ZivBot
 
-**Agent-native dots on a FalkorDB graph.** Connect your apps *and your AI subscriptions* (Codex, Claude Code, Cursor, OpenCode, Grok, Antigravity). ZivBot maps all of it into one graph per user. Its personal agents, the **dots**, use that graph to decide what matters, talk to each other, and act through the right coding agent. Every answer comes with the Cypher path behind it.
+**Agent-native Zivs on a FalkorDB graph.** Connect your apps *and your AI subscriptions* (Codex, Claude Code, Cursor, OpenCode, Grok, Antigravity). ZivBot maps all of it into one graph per user. Its personal agents, the **Zivs**, use that graph to decide what matters, talk to each other, and act through the right coding agent. Every answer comes with the Cypher path behind it.
 
 > 🏁 **Graph Hacks: Context for AI Agents** (WeMakeDevs × FalkorDB)
-> **Track:** Agents That Act on Connected Data (primary). It also covers Agent Memory and Coordination: per-user graphs, episodic/semantic/procedural memory, and dot-to-dot handoffs.
+> **Track:** Agents That Act on Connected Data (primary). It also covers Agent Memory and Coordination: per-user graphs, episodic/semantic/procedural memory, and Ziv-to-Ziv handoffs.
 > **Demo video (2:47):** [watch](https://zivbot.vercel.app/demo.mp4) · [file](docs/zivbot-demo.mp4) · **Live:** [zivbot.vercel.app](https://zivbot.vercel.app) · **Built in:** Oct 15–18, 2026
 
 <p align="center"><a href="https://zivbot.vercel.app/demo.mp4"><b>▶ Watch the 3-minute demo</b></a>: the real app, a real Codex run, Codex calling ZivBot over MCP. Voiceover by Chatterbox TTS.</p>
@@ -21,13 +21,13 @@
 | <img src="docs/screenshots/decide.png" alt="Decide"> | <img src="docs/screenshots/count.png" alt="Count"> |
 | **Show path: the Cypher behind every answer** | **A real Codex run, picked by graph routing** |
 | <img src="docs/screenshots/trace.png" alt="Trace drawer"> | <img src="docs/screenshots/forge-run.png" alt="Forge running Codex"> |
-| **Insights: customers at risk, blocked work, bus factor, SPOFs** | **@-mention dots and plugins** |
+| **Insights: customers at risk, blocked work, bus factor, SPOFs** | **@-mention Zivs and plugins** |
 | <img src="docs/screenshots/insights.png" alt="Insights"> | <img src="docs/screenshots/mentions.png" alt="Mentions"> |
 | **FalkorDB algorithms as tools** | **The live graph model (Schema)** |
 | <img src="docs/screenshots/algorithms.png" alt="Algorithms"> | <img src="docs/screenshots/schema.png" alt="Schema"> |
 | **Your graph + Cypher console** | **Connect Apps, plus your graph over MCP** |
 | <img src="docs/screenshots/graph.png" alt="Graph explorer"> | <img src="docs/screenshots/connect.png" alt="Connect Apps"> |
-| **⌘K across dots and the whole graph** | **Phone width** |
+| **⌘K across Zivs and the whole graph** | **Phone width** |
 | <img src="docs/screenshots/palette.png" alt="Palette"> | <img src="docs/screenshots/mobile.png" width="300" alt="Mobile"> |
 
 ---
@@ -68,7 +68,7 @@ Take FalkorDB away and nothing works.
    - **Demo:** the **Lumen Labs** synthetic workspace (mail, calendar, Slack, Notion, Linear and a real git repo).
 3. **Triage from the graph.** Threads waiting on you are ranked by customer ARR and sender PageRank. P1/P2 tickets come with their blast radius and the ARR at risk. Pending decisions and calendar clashes are included too.
 4. **Act through your agents.** "Fix LUM-142 and LUM-139":
-   - Ziv hands the job to **Forge**, the engineering dot.
+   - Ziv hands the job to **Forge**, the engineering Ziv.
    - Forge pulls the diagnosis already in Slack and mail, plus the implementing repo and its authors, from the graph.
    - A graph query scores your installed agents.
    - You approve, and the agent runs headlessly on a branch. The tests run, and the result is written back as `(:Run)-[:RESOLVES]->(:Ticket)`.
@@ -84,19 +84,19 @@ Take FalkorDB away and nothing works.
    - what changed in 24 hours (every node carries `firstSeen`/`lastSeen`)
 
    The background loop watches these too.
-8. **Graph algorithms as agent tools.** `run_algorithm` gives every dot (and any MCP client) FalkorDB's `pageRank`, `betweenness`, `HarmonicCentrality`, `labelPropagation`, `WCC`, `BFS`, and weighted `SPpaths`, where collaboration strength becomes the edge cost for a "warm intro" path. Labels and relationships are allow-listed against the live schema. The **Algorithms** tab runs them visually (size = score, colour = group), and the **Schema** tab draws the live graph model with every index.
+8. **Graph algorithms as agent tools.** `run_algorithm` gives every Ziv (and any MCP client) FalkorDB's `pageRank`, `betweenness`, `HarmonicCentrality`, `labelPropagation`, `WCC`, `BFS`, and weighted `SPpaths`, where collaboration strength becomes the edge cost for a "warm intro" path. Labels and relationships are allow-listed against the live schema. The **Algorithms** tab runs them visually (size = score, colour = group), and the **Schema** tab draws the live graph model with every index.
 9. **Rebalance work.** "Who should take LUM-139?" ranks people by what they've done on the affected systems (commits, docs, past tickets) minus their load (open tickets, meetings), and drafts the move. Approving rewires `ASSIGNED_TO` and keeps a `PREVIOUSLY_ASSIGNED_TO` trail.
 10. **Meeting prep.** "Prep me for my next meeting with Kate" follows Event → attendees → their Org → open and fixed tickets, recent mail, unanswered threads and related decisions. It writes a brief linked `(:Doc)-[:PREPARES]->(:Event)` with a suggested agenda.
 11. **Watch rules (procedural memory that acts).** "Tell me whenever a P1 reaches a customer" stores a `:Rule` that wraps a Cypher pattern. The background loop evaluates every rule, and new matches arrive with ready actions. `(:Rule)-[:FIRED_ON]->(entity)` makes sure a match never repeats. There are five kinds: customer chasing with no reply, stale P1 with no run, decision waiting too long, failed run nobody retried, and open P1 reaching a customer.
-12. **Watch the dot think.** Each Cypher step streams the nodes it touched, and the thinking card draws them as a live graph.
+12. **Watch the Ziv think.** Each Cypher step streams the nodes it touched, and the thinking card draws them as a live graph.
 13. **Timeline.** "What happened with LUM-139?" tells the story of any entity in order, with who acted: Kate's first email, the ticket, our promise, two follow-ups, the fix, the QBR prep. It walks one hop to everything dated, and two hops through MENTIONS/ABOUT/FOR_TICKET/RESOLVES/SOURCE.
 14. **Agent skill graph.** Every run feeds `(Agent)-[:SKILLED_IN {wins, losses, score}]->(System)` (Laplace-smoothed), and routing reads it. "What is Codex good at?" answers from it, and Activity draws it.
 15. **One person, one node.** Name similarity plus Jaccard overlap of each person's two-hop working context finds the same human split across apps (Slack's `priya.r` = the directory's Priya Raman). Approving the merge rewires every relationship onto one node.
 16. **Knowledge going stale.** Docs written before the latest incidents on their systems are flagged, with runbooks marked as high risk.
-17. **⌘K.** Jump to any dot or group (⌘1–⌘9), or search the whole graph.
-18. **Decision stakes.** "Help me decide" lays out the decision's source trail and everything it touches before you choose. Then the dot records the choice and drafts the follow-ups.
-19. **Dots talk to each other.** "Messaged Forge" and "2 messages with Ziv" chips open the dot-to-dot exchange. Group chats route to the dots whose roles fit. All dots share one graph memory.
-20. **Show the path.** Under every answer, **Show path** opens the exact Cypher run (with timings, row counts and the dot that ran it) and the subgraph the answer used.
+17. **⌘K.** Jump to any Ziv or group (⌘1–⌘9), or search the whole graph.
+18. **Decision stakes.** "Help me decide" lays out the decision's source trail and everything it touches before you choose. Then the Ziv records the choice and drafts the follow-ups.
+19. **Zivs talk to each other.** "Messaged Forge" and "2 messages with Ziv" chips open the Ziv-to-Ziv exchange. Group chats route to the Zivs whose roles fit. All Zivs share one graph memory.
+20. **Show the path.** Under every answer, **Show path** opens the exact Cypher run (with timings, row counts and the Ziv that ran it) and the subgraph the answer used.
 21. **Works while you're away.** A background loop re-runs triage and only speaks up when what needs you changes. Finished runs report back with test results.
 22. **Remember.** Say "remember that I prefer Codex for backend fixes": it becomes a `:Procedure` that `PREFERS` Codex, and the router weighs it on every routing decision.
 23. **What if someone is out?** Ask "what if Hana is out next week?" and Ziv takes her out of the graph. It reports the systems nobody else knows, the systems left with one knower, her open tickets with the best new owner for each, the decisions that lose their context, the customers who lose a contact, her meetings this week, and who covers best. Then it offers to start the handoff. The **Insights** tab runs the same simulation for everyone and ranks **who we can't lose**. Click a person in the graph explorer for the same question.
@@ -154,7 +154,7 @@ flowchart LR
   end
   subgraph Server[ZivBot server · Node + Hono]
     A[Dots<br/>LLM tool loop / graph planner] --> T[Graph tools<br/>traced Cypher]
-    A <--> X[Dot ↔ dot exchanges]
+    A <--> X[Ziv ↔ Ziv exchanges]
     C[Connectors 28] --> I[Ingest + entity linking]
     F[Fleet router + runner] --> CLI[(codex / claude / cursor /<br/>opencode / grok / agy)]
     P[Proactive loop]
@@ -168,7 +168,7 @@ flowchart LR
 - **One graph per user** (`ziv_<userId>`), using FalkorDB's multigraph tenancy, plus a small `ziv_registry` graph.
 - **Traced queries.** Every Cypher statement goes through `UserGraph.q()`. During a turn, an `AsyncLocalStorage` trace collects each query (label, Cypher, params, ms, rows) and every node uid the results touched. That becomes an `(:Answer)-[:USED]->(node)` provenance subgraph.
 - **Brain.** Any OpenAI-compatible endpoint with tool calling works (OpenRouter's free models by default). Without a key, the **graph planner** maps intents to the same tools, so the app fully works with no LLM.
-- **MCP both ways.** ZivBot *consumes* any MCP server, whose tools become `:Tool` nodes the dot finds with `find_tools`. ZivBot also *is* an MCP server (`npm run mcp`), so Codex, Claude Code and Cursor can query your graph.
+- **MCP both ways.** ZivBot *consumes* any MCP server, whose tools become `:Tool` nodes the Ziv finds with `find_tools`. ZivBot also *is* an MCP server (`npm run mcp`), so Codex, Claude Code and Cursor can query your graph.
 
 ## Graph data model
 
@@ -220,7 +220,7 @@ graph LR
 | Memory | `Dot` · `Conversation` (direct / group / exchange) · `Episode` (episodic) · `Fact` (semantic) · `Procedure` (procedural) · `Answer` (provenance) · `Draft` (approvals) · `Notice` |
 
 - **Identity across apps.** Every node has a `uid`. Every entity also carries `:Searchable` with a `search` field, so **one full-text index** covers all labels. People are matched across Gmail, Slack, Linear, GitHub and git by email, then by name (`upsertPeople`).
-- **Entity linking.** Free text (mail, chat, docs, commits, even chat with the dots) is scanned against a dictionary built *from the graph* (names, aliases, ticket keys) to add `MENTIONS` edges. Anything one connector ingests becomes linkable by every other connector.
+- **Entity linking.** Free text (mail, chat, docs, commits, even chat with the Zivs) is scanned against a dictionary built *from the graph* (names, aliases, ticket keys) to add `MENTIONS` edges. Anything one connector ingests becomes linkable by every other connector.
 - **Derived structure** is recomputed after each sync (`server/analytics.ts`):
   - `(:Person)-[:COLLABORATES {weight}]->(:Person)` from shared mail, meetings, projects, channels and files.
   - `Person.rank` from `algo.pageRank`.
@@ -430,7 +430,7 @@ MERGE (a)-[s:SKILLED_IN]->(sys) SET s.wins = wins, s.losses = losses, s.score = 
 CALL db.idx.fulltext.queryNodes('Searchable', $q) YIELD node, score
 ```
 
-**Memory** — what applies to this turn, from any dot:
+**Memory** — what applies to this turn, from any Ziv:
 ```cypher
 MATCH (e:Episode)-[:MENTIONS]->(x) WHERE x.uid IN $about AND NOT (e)-[:IN]->(:Conversation {uid:$conv})
 OPTIONAL MATCH (e)-[:BY]->(d:Dot) RETURN e.role, e.text, d.name ORDER BY e.at DESC LIMIT 5
@@ -482,7 +482,7 @@ Configuration (`.env`):
 | `ZIV_LLM_BASE_URL` / `ZIV_LLM_API_KEY` / `ZIV_LLM_MODEL` | any OpenAI-compatible endpoint with tool calling; `OPENROUTER_API_KEY` alone also works (free model by default). `ZIV_LLM=off` forces the graph planner |
 | `ZIV_HOSTED`, `ZIV_CORS_ORIGINS` | public-deploy mode (see above) and extra allowed web origins |
 | `ZIV_CODEX_MODEL`, `ZIV_OPENCODE_MODEL` | model pins for dispatched coding agents |
-| `ZIV_PROACTIVE_MS` | how often dots scan the graph on their own (0 = off) |
+| `ZIV_PROACTIVE_MS` | how often Zivs scan the graph on their own (0 = off) |
 
 **Demo script** (about 3 minutes):
 
@@ -519,7 +519,7 @@ You get `triage`, `critical_path`, `diagnose`, `blast_radius`, `what_if_absent`,
 
 ### Desktop
 
-`desktop/` is an Electron shell, so the dots really do run on their own computer. It:
+`desktop/` is an Electron shell, so the Zivs really do run on their own computer. It:
 
 - starts FalkorDB through Docker if needed
 - runs the bundled server
@@ -534,7 +534,7 @@ cd desktop && npm install && npm run bundle && npm start
 
 `mobile/` is an Expo (SDK 52) app. <p><img src="docs/screenshots/android-pair.png" width="240"> <img src="docs/screenshots/android-chats.png" width="240"></p>
 
-Pair it by scanning the QR code under *profile panel → Phone* on your computer. From then on your phone talks to the dots on your computer: the same graph, with native notifications and haptics. The coding agents and your data stay on your machine.
+Pair it by scanning the QR code under *profile panel → Phone* on your computer. From then on your phone talks to the Zivs on your computer: the same graph, with native notifications and haptics. The coding agents and your data stay on your machine.
 
 ```bash
 cd mobile && npm install && npx expo start --android
@@ -551,12 +551,12 @@ The demo graph uses only **synthetic data** (the fictional Lumen Labs, under `se
 ```
 server/            Hono API, agent, tools, fleet, memory, connectors, MCP server
   tools.ts         graph tools (all the Cypher above)
-  agent.ts         dot turns: LLM tool loop / graph planner, dot↔dot messaging, onboarding
+  agent.ts         Ziv turns: hybrid brain (planner + model), Ziv↔Ziv messaging, onboarding
   fleet.ts         coding-agent subscriptions: detect, route (Cypher), run, record
   memory.ts        conversations, episodes, provenance
   analytics.ts     COLLABORATES + PageRank / label propagation / betweenness
   connectors/      demo workspace, public (no key), live (API key), MCP client
-web/               React UI (GrokBot / ChatGPT-dots style)
+web/               React UI
 desktop/           Electron app
 mobile/            Expo Android/iOS app
 demo/              lumen-payments: the synthetic repo the coding agents fix

@@ -148,7 +148,7 @@ function onEvent(e: any) {
         return { thinking: { ...s.thinking, [e.conv]: conv } };
       });
       if (e.on) set((s) => ({ thinking: { ...s.thinking, [e.conv]: { ...(s.thinking[e.conv] || {}), [e.dot]: { dot: e.dot, steps: [], touched: [] } } } }));
-      // let the live graph linger a beat so you can see what the dot walked through
+      // let the live graph linger a beat so you can see what the Ziv walked through
       else if ((get().thinking[e.conv]?.[e.dot]?.touched.length || 0) > 3) setTimeout(drop, 1400);
       else drop();
       break;

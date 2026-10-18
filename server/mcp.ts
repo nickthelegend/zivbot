@@ -1,7 +1,7 @@
 /**
  * ZivBot as an MCP server (stdio). The same tools are served over Streamable
  * HTTP at /mcp on the API (server/index.ts). Any agent that speaks MCP — Codex, Claude
- * Code, Cursor, Claude Desktop — gets your dots' graph tools: triage,
+ * Code, Cursor, Claude Desktop — gets your Zivs' graph tools: triage,
  * who_knows, blast_radius, decision_trace, connection_path, recall… all
  * running Cypher against your FalkorDB graph.
  *

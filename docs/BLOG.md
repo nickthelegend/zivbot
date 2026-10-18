@@ -6,9 +6,9 @@ I pay for Codex. I pay for Claude. I have OpenCode, Grok and Antigravity install
 
 The context is spread across a dozen apps, and the agents are spread across a dozen subscriptions. ZivBot is my attempt to connect the two with a graph.
 
-## The idea: dots that act on connected data
+## The idea: Zivs that act on connected data
 
-ZivBot borrows the look of GrokBot and ChatGPT's "dots": friendly little agents you chat with, which keep working while you're away. Under the hood, every dot reads and writes **one FalkorDB graph per user**:
+ZivBot borrows the look of GrokBot and ChatGPT's "Zivs": friendly little agents you chat with, which keep working while you're away. Under the hood, every Ziv reads and writes **one FalkorDB graph per user**:
 
 - **Connected data.** People, teams, customers, systems, repos, files, commits, tickets, email threads, meetings, Slack messages, Notion docs and decisions, all linked.
 - **The agent fleet.** Each installed coding-agent subscription is an `:Agent` node. Every job it runs becomes a `:Run` that `WORKED_ON` systems and `RESOLVES` tickets.
@@ -31,16 +31,16 @@ Codex wins, and the card tells me why.
 
 ## Show the path
 
-The feature I'm proudest of is the least flashy. Every Cypher statement goes through one function. While a dot is answering, an `AsyncLocalStorage` trace records the query, its timing, its row count, and every node uid the results touched. The reply is stored with an `(:Answer)-[:USED]->(node)` subgraph. Click **Show path** under any answer and you see the exact queries and the subgraph, including the work a *different* dot did when it was delegated to.
+The feature I'm proudest of is the least flashy. Every Cypher statement goes through one function. While a Ziv is answering, an `AsyncLocalStorage` trace records the query, its timing, its row count, and every node uid the results touched. The reply is stored with an `(:Answer)-[:USED]->(node)` subgraph. Click **Show path** under any answer and you see the exact queries and the subgraph, including the work a *different* Ziv did when it was delegated to.
 
-## Dots talking to dots
+## Zivs talking to Zivs
 
-Ask Ziv to fix a ticket and it messages Forge, the engineering dot. The exchange is just another conversation in the graph, so both dots remember it, and you get a little "Messaged Forge" chip you can open. Shared memory turns out to be the easy part of multi-agent coordination when the memory is a graph.
+Ask Ziv to fix a ticket and it messages Forge, the engineering Ziv. The exchange is just another conversation in the graph, so both Zivs remember it, and you get a little "Messaged Forge" chip you can open. Shared memory turns out to be the easy part of multi-agent coordination when the memory is a graph.
 
 ## What I'd do next
 
 - Real OAuth for Google, Slack and Notion. The connectors exist, but for the hackathon everything you see is synthetic or public data.
 - Vector search over `:Episode` and `:Doc` using FalkorDB's vector index.
-- Letting dots open real pull requests through the GitHub connector once a run goes green.
+- Letting Zivs open real pull requests through the GitHub connector once a run goes green.
 
 Code: _repo link_ · Video: _link_

@@ -34,7 +34,7 @@ export type PlanResult = { text: string; cards: Card[]; tools: string[]; confide
 export type PlanOpts = {
   dot?: { uid: string; name: string; role: string };
   from?: string;
-  /** answering inside a group chat alongside other dots: no delegation, stick to your role */
+  /** answering inside a group chat alongside other Zivs: no delegation, stick to your role */
   inGroup?: boolean;
   delegate?: (to: string, goal: string) => Promise<{ text: string; cards: Card[]; to?: { name: string } }>;
 };
@@ -72,7 +72,7 @@ export async function plan(ctx: Ctx, input: string, opts: PlanOpts = {}): Promis
     const hit = mem.filter((m) => String(m.text).toLowerCase().split(/[^\p{L}\p{N}]+/u).some((w) => w.length > 3 && words.has(w.replace(/(ing|ed|s)$/, '')) && !ents.some((e) => e.uid.toLowerCase().includes(w))));
     if (hit.length) { used.push('recall'); remembered = `**You told me** (${ago(hit[0].at)}): “${hit[0].text}”${hit.length > 1 ? ` — and ${hit.length - 1} more note${hit.length > 2 ? 's' : ''} about this.` : ''}`; }
   }
-  const dots = await ctx.g.q(`MATCH (d:Dot) WHERE d.uid <> $me RETURN d.name AS name, d.role AS role`, { me: ctx.dot }, '~other dots');
+  const dots = await ctx.g.q(`MATCH (d:Dot) WHERE d.uid <> $me RETURN d.name AS name, d.role AS role`, { me: ctx.dot }, '~other Zivs');
   const specialist = (re: RegExp) => (opts.from || opts.inGroup || !opts.delegate || (opts.dot && re.test(opts.dot.role)) ? null : dots.find((d) => re.test(d.role)));
   const delegateTo = async (name: string, goal: string, intro?: string) => {
     used.push('message_dot');
@@ -83,7 +83,7 @@ export async function plan(ctx: Ctx, input: string, opts: PlanOpts = {}): Promis
 
   // ---- @mentions: "@Forge fix LUM-142", "@Hacker News graph databases"
   if (t.includes('@')) {
-    const allDots = await ctx.g.q(`MATCH (d:Dot) RETURN d.uid AS uid, d.name AS name`, {}, '~dots for @mentions');
+    const allDots = await ctx.g.q(`MATCH (d:Dot) RETURN d.uid AS uid, d.name AS name`, {}, '~Zivs for @mentions');
     const byLen = (a: { name: string }, b: { name: string }) => b.name.length - a.name.length;
     const md = allDots.sort(byLen).find((d) => low.includes(`@${d.name.toLowerCase()}`));
     if (md && md.uid !== ctx.dot && opts.delegate && !opts.from) {
@@ -106,11 +106,11 @@ export async function plan(ctx: Ctx, input: string, opts: PlanOpts = {}): Promis
         const out = await runConnectorAction(ctx.userId, ctx.g, mp.id, action.name, { [key]: rest });
         return done(`From **${mp.name}** (${action.name.replace(/_/g, ' ')}):\n\n${out.slice(0, 2500)}`);
       }
-      return done(`**${mp.name}** is ${status?.status || 'available'}. It gives your dots: ${(mp.actions || []).map((a) => `\`${a.name}\`${a.mutates ? ' (asks first)' : ''}`).join(', ') || 'its data in the graph'}.${mp.description ? `\n\n${mp.description}` : ''}`);
+      return done(`**${mp.name}** is ${status?.status || 'available'}. It gives your Zivs: ${(mp.actions || []).map((a) => `\`${a.name}\`${a.mutates ? ' (asks first)' : ''}`).join(', ') || 'its data in the graph'}.${mp.description ? `\n\n${mp.description}` : ''}`);
     }
   }
 
-  // ---- talk to another dot: "ask Forge to …", "tell Scout …"
+  // ---- talk to another Ziv: "ask Forge to …", "tell Scout …"
   const direct = t.match(/^(?:please\s+)?(?:ask|tell|have|get|message|ping|loop in)\s+(\w+)\s*(?:to|that|:|,)?\s*(.*)$/i);
   if (direct && opts.delegate && !opts.from) {
     const target = dots.find((d) => d.name.toLowerCase() === direct[1].toLowerCase());
@@ -118,7 +118,7 @@ export async function plan(ctx: Ctx, input: string, opts: PlanOpts = {}): Promis
   }
 
   if (/^(what can you do|help|what do you do)\??$/i.test(t)) {
-    return done(`Here's what I can do with your graph:\n- **Triage** — "what needs me?" ranks mail, incidents, decisions and calendar clashes by who and what they touch\n- **Act** — "fix LUM-142" picks the best coding agent from your subscriptions and runs it once you approve\n- **Trace** — "why did we move to Stripe?", "who knows billing-db?", "what breaks if auth-service goes down?"\n- **Coordinate** — "ask Forge to …" sends work to another dot; they share my memory\n- **Remember** — "remember that Kate prefers calls" — every dot uses it\n\nTap the path icon under any answer to see the Cypher and the nodes behind it.`);
+    return done(`Here's what I can do with your graph:\n- **Triage** — "what needs me?" ranks mail, incidents, decisions and calendar clashes by who and what they touch\n- **Act** — "fix LUM-142" picks the best coding agent from your subscriptions and runs it once you approve\n- **Trace** — "why did we move to Stripe?", "who knows billing-db?", "what breaks if auth-service goes down?"\n- **Coordinate** — "ask Forge to …" sends work to another Ziv; they share my memory\n- **Remember** — "remember that Kate prefers calls" — every Ziv uses it\n\nTap the path icon under any answer to see the Cypher and the nodes behind it.`);
   }
 
   // ---- memory: forget / no longer true

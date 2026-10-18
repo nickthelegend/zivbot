@@ -1,8 +1,8 @@
-// ZivBot Desktop — the dots' own computer.
+// ZivBot Desktop — the Zivs' own computer.
 //
 // 1. Make sure FalkorDB is up (start the `zivbot-falkordb` Docker container if needed).
 // 2. Start the ZivBot server: bundled (packaged app) or `tsx` from the repo (dev).
-// 3. Open the GrokBot-style window, with a tray showing what the dots are doing.
+// 3. Open the GrokBot-style window, with a tray showing what the Zivs are doing.
 // The server listens on the LAN too, so the Android app can pair with this computer.
 
 const { app, BrowserWindow, Tray, Menu, nativeImage, shell, ipcMain, Notification } = require('electron');
@@ -93,7 +93,7 @@ function createTray() {
     { label: 'Quit ZivBot', role: 'quit' },
   ]);
   tray.setContextMenu(menu());
-  tray.setToolTip('ZivBot — your dots are on this computer');
+  tray.setToolTip('ZivBot — your Zivs are on this computer');
 }
 
 async function main() {
@@ -117,7 +117,7 @@ async function main() {
   win.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: 'deny' }; });
   win.on('close', (e) => { if (process.platform === 'darwin' && !app.isQuitting) { e.preventDefault(); win.hide(); } });
   createTray();
-  if (Notification.isSupported()) new Notification({ title: 'ZivBot is running', body: 'Your dots keep working while you’re away.' }).show();
+  if (Notification.isSupported()) new Notification({ title: 'ZivBot is running', body: 'Your Zivs keep working while you’re away.' }).show();
 }
 
 app.on('before-quit', () => { app.isQuitting = true; server?.kill(); });

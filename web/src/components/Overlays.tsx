@@ -50,7 +50,7 @@ export function FileViewer() {
   );
 }
 
-/** The dot↔dot conversation behind a "Messaged Forge" chip. */
+/** The Ziv↔Ziv conversation behind a "Messaged Forge" chip. */
 export function ExchangeViewer() {
   const ex = useStore((s) => s.exchange);
   const dotMap = useDotMap();
@@ -61,7 +61,7 @@ export function ExchangeViewer() {
     <div className="drawer-backdrop" onClick={() => set({ exchange: undefined })}>
       <div className="drawer narrow" onClick={(e) => e.stopPropagation()}>
         <div className="drawer-head">
-          <div><div className="drawer-kicker"><Icon.users size={14} /> Between your dots</div><div className="drawer-title">Messages with {ex.name}</div></div>
+          <div><div className="drawer-kicker"><Icon.users size={14} /> Between your Zivs</div><div className="drawer-title">Messages with {ex.name}</div></div>
           <button aria-label="Close" className="icon-btn" onClick={() => set({ exchange: undefined })}><Icon.close size={18} /></button>
         </div>
         <div className="exchange-list">
@@ -98,8 +98,8 @@ export function NewDotModal() {
   };
   return (
     <div className="modal-backdrop" onClick={() => set({ newDotOpen: false })}>
-      <div className="modal new-dot" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-head"><h2>New dot</h2><button aria-label="Close" className="icon-btn" onClick={() => set({ newDotOpen: false })}><Icon.close size={18} /></button></div>
+      <div className="modal new-Ziv" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-head"><h2>New Ziv</h2><button aria-label="Close" className="icon-btn" onClick={() => set({ newDotOpen: false })}><Icon.close size={18} /></button></div>
         <div className="modal-body">
           <div className="sec-head"><h3>Templates</h3></div>
           <div className="preset-grid">

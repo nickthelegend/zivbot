@@ -1360,7 +1360,7 @@ export const tools: Tool[] = [
         }
       }
       await embedPending(g, 20).catch(() => {});
-      return { text: `Saved as a ${k}${about.length ? `, linked to ${about.length} thing${about.length > 1 ? 's' : ''} in your graph` : ''}. Every dot will use it.`, data: { uid: u, about } };
+      return { text: `Saved as a ${k}${about.length ? `, linked to ${about.length} thing${about.length > 1 ? 's' : ''} in your graph` : ''}. Every Ziv will use it.`, data: { uid: u, about } };
     },
   },
 
@@ -1401,7 +1401,7 @@ export const tools: Tool[] = [
       const best = mem.map((m) => ({ ...m, s: score(m) })).filter((m) => m.s >= 2).sort((a, b) => b.s - a.s)[0];
       if (!best) return { text: `I couldn't find a memory that matches — here's what I hold:\n${mem.slice(0, 5).map((m) => `- ${m.text}`).join('\n') || '- nothing yet'}` };
       await g.q(`MATCH (m {uid:$u}) SET m.status = 'retracted', m.retractedAt = $now, m.retractedBy = $why`, { u: best.uid, now: Date.now(), why: clip(text, 120) }, 'retract the memory (kept for history)');
-      return { text: `Done — I've stopped using “${best.text}” (from ${ago(best.at)}). It stays in the graph's history as retracted, and no dot will rely on it.`, data: best };
+      return { text: `Done — I've stopped using “${best.text}” (from ${ago(best.at)}). It stays in the graph's history as retracted, and no Ziv will rely on it.`, data: best };
     },
   },
 

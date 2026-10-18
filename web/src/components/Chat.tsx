@@ -52,7 +52,7 @@ export function Chat() {
           {!!working?.length && working.length > 1 && <div className="working-line"><AvatarStack dots={working.map((n) => [...dotMap.values()].find((d) => d.name === n)!).filter(Boolean)} size={16} /> {working[0]}{working.length > 1 ? ` and ${working.length - 1} other${working.length > 2 ? 's' : ''}` : ''} {working.length > 1 ? 'are' : 'is'} working.</div>}
         </div>
       </div>
-      <CallBar conv={active} name={isGroup ? conv.name : dot?.name || 'your dot'} avatar={dot?.avatar} color={dot?.color} messages={list} />
+      <CallBar conv={active} name={isGroup ? conv.name : dot?.name || 'your Ziv'} avatar={dot?.avatar} color={dot?.color} messages={list} />
       <Composer conv={active} placeholder={onboarding ? 'Type your answer, or talk about something else' : `Message ${isGroup ? conv.name : dot?.name || ''}`} />
     </div>
   );
@@ -226,15 +226,15 @@ function Composer({ conv, placeholder }: { conv: string; placeholder: string }) 
             </div>
           )}
         </div>
-          <button className="chip-btn" onClick={() => { const pos = ta.current?.selectionStart ?? text.length; const next = `${text.slice(0, pos)}${text && !/\s$/.test(text.slice(0, pos)) ? ' ' : ''}@${text.slice(pos)}`; setText(next); setMClosed(false); const p = pos + (next.length - text.length); setCaret(p); requestAnimationFrame(() => { ta.current?.focus(); ta.current?.setSelectionRange(p, p); }); }} title="Mention a dot or plugin">@ Mention</button>
+          <button className="chip-btn" onClick={() => { const pos = ta.current?.selectionStart ?? text.length; const next = `${text.slice(0, pos)}${text && !/\s$/.test(text.slice(0, pos)) ? ' ' : ''}@${text.slice(pos)}`; setText(next); setMClosed(false); const p = pos + (next.length - text.length); setCaret(p); requestAnimationFrame(() => { ta.current?.focus(); ta.current?.setSelectionRange(p, p); }); }} title="Mention a Ziv or plugin">@ Mention</button>
           {graph && <button className="chip-btn info" onClick={() => set({ view: 'graph' })} title={`FalkorDB graph ${graph.graph}`}><i className="pulse" />{graph.nodes.toLocaleString()} nodes</button>}
-          <span className="chip-btn info static" title="What the dots think with">{brain === 'graph-planner' ? 'Graph planner' : brain.startsWith('hybrid:') ? `Planner + ${brain.split('/').pop()?.replace(/:free$/, '')}` : brain.replace(/^llm:/, '').split('/').pop()}</span>
+          <span className="chip-btn info static" title="What the Zivs think with">{brain === 'graph-planner' ? 'Graph planner' : brain.startsWith('hybrid:') ? `Planner + ${brain.split('/').pop()?.replace(/:free$/, '')}` : brain.replace(/^llm:/, '').split('/').pop()}</span>
           <span className="grow" />
           <button aria-label="Dictate" className={`icon-btn round ${listening ? 'live' : ''}`} onClick={dictate} title="Dictate"><Icon.mic size={17} /></button>
           {text.trim() ? (
             <button className="send-btn" onClick={submit} title="Send"><Icon.send size={17} /></button>
           ) : (
-            <button className="send-btn voice" onClick={() => set({ call: !get().call })} title="Talk to your dot"><Icon.wave size={17} /></button>
+            <button className="send-btn voice" onClick={() => set({ call: !get().call })} title="Talk to your Ziv"><Icon.wave size={17} /></button>
           )}
         </div>
       </div>

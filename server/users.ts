@@ -67,7 +67,7 @@ export async function ensureTeam(userId: string) {
     if (existing.has(p.avatar)) continue;
     const { dot, conv } = await createDot(g, p);
     added.push(p.name);
-    await postMessage(userId, g, { conv, role: 'assistant', dot, text: `Hi! I'm ${p.name}. ${p.role.split(' — ')[1].replace(/^./, (c) => c.toUpperCase())}.\n\nI share the same graph memory as the other dots, so you can talk to me directly or let them send work my way.` });
+    await postMessage(userId, g, { conv, role: 'assistant', dot, text: `Hi! I'm ${p.name}. ${p.role.split(' — ')[1].replace(/^./, (c) => c.toUpperCase())}.\n\nI share the same graph memory as the other Zivs, so you can talk to me directly or let them send work my way.` });
   }
   return added;
 }

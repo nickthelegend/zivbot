@@ -6,7 +6,7 @@ import type { UserGraph } from './graph.ts';
  * Connected data      Person Team Org Project System Repo File Ticket Email Thread
  *                     Event Doc ChatMessage Channel Decision
  * Agent fleet         Agent (a subscription / CLI) Run Tool Connector
- * Agent memory        Dot Conversation Episode Fact Procedure Answer Notice Draft
+ * Agent memory        Ziv Conversation Episode Fact Procedure Answer Notice Draft
  *
  * Every entity also carries the :Searchable label with a `search` text field,
  * so one full-text index covers names, subjects and bodies across labels.

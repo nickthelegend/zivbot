@@ -7,7 +7,7 @@ import type { Card } from './tools.ts';
 
 /**
  * Watch rules: procedural memory that acts. Each rule is a named graph
- * pattern (Cypher) stored as a :Rule node owned by a dot. The background loop
+ * pattern (Cypher) stored as a :Rule node owned by a Ziv. The background loop
  * evaluates every active rule; a match the rule hasn't fired on yet becomes a
  * message with a ready-made action, and (:Rule)-[:FIRED_ON]->(entity) makes
  * sure it never repeats.
@@ -117,7 +117,7 @@ export async function setRuleActive(g: UserGraph, ruleUid: string, active: boole
   await g.q(`MATCH (r:Rule {uid: $u}) SET r.active = $a`, { u: ruleUid, a: active }, 'toggle rule');
 }
 
-/** Evaluate active rules; post new matches into the owning dot's chat. Returns the matches posted. */
+/** Evaluate active rules; post new matches into the owning Ziv's chat. Returns the matches posted. */
 export async function evaluateRules(userId: string, g: UserGraph, only?: string, background = false) {
   const rules = await g.q(`MATCH (r:Rule) WHERE r.active AND ($only = '' OR r.uid = $only) OPTIONAL MATCH (r)-[:OWNED_BY]->(d:Dot) RETURN r.uid AS uid, r.kind AS kind, r.params AS params, d.uid AS dot`, { only: only ?? '' }, '~active rules');
   const fired: { rule: string; matches: Match[] }[] = [];

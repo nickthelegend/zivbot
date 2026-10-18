@@ -1,6 +1,6 @@
 /**
  * ZivBot for Android (and iOS): pair with the ZivBot running on your computer,
- * then carry your dots in your pocket. The dots, the graph and the coding
+ * then carry your Zivs in your pocket. The Zivs, the graph and the coding
  * agents stay on your computer — the phone is a window onto them, with native
  * pairing (QR), notifications and haptics.
  */
@@ -65,8 +65,8 @@ function PairScreen({ onPaired }: { onPaired: (url: string) => void }) {
   return (
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={s.pair}>
       <Dot />
-      <Text style={s.h1}>Meet your dots</Text>
-      <Text style={s.p}>ZivBot runs on your computer — your apps, your AI subscriptions and your memory graph live there. Pair this phone to talk to your dots from anywhere in the house.</Text>
+      <Text style={s.h1}>Meet your Zivs</Text>
+      <Text style={s.p}>ZivBot runs on your computer — your apps, your AI subscriptions and your memory graph live there. Pair this phone to talk to your Zivs from anywhere in the house.</Text>
       <Pressable style={s.btnPrimary} onPress={async () => { if (!perm?.granted) { const r = await requestPerm(); if (!r.granted) return setError('Camera permission is needed to scan.'); } setScanning(true); }}>
         <Text style={s.btnPrimaryText}>Scan pairing code</Text>
       </Pressable>

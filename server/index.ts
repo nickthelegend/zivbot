@@ -116,7 +116,7 @@ app.get('/api/events', (c) => {
   });
 });
 
-// ------------------------------------------------------------------ dots & conversations
+// ------------------------------------------------------------------ Zivs & conversations
 
 app.get('/api/conversations/:id/messages', async (c) => {
   const g = await userGraph(user(c));
@@ -142,9 +142,9 @@ app.post('/api/dots', async (c) => {
   const g = await userGraph(id);
   const body = await c.req.json();
   const preset = DOT_PRESETS.find((p) => p.avatar === body.preset);
-  const p = preset || { name: String(body.name || 'New dot').slice(0, 24), avatar: body.avatar || 'ziv', color: body.color || '#ff7a1a', role: String(body.role || 'General helper').slice(0, 200) };
+  const p = preset || { name: String(body.name || 'New Ziv').slice(0, 24), avatar: body.avatar || 'ziv', color: body.color || '#ff7a1a', role: String(body.role || 'General helper').slice(0, 200) };
   const { dot, conv } = await createDot(g, p);
-  await postMessage(id, g, { conv, role: 'assistant', dot, text: `Hi! I'm ${p.name}. ${p.role}.\n\nI share the same graph memory as your other dots. What should I start with?` });
+  await postMessage(id, g, { conv, role: 'assistant', dot, text: `Hi! I'm ${p.name}. ${p.role}.\n\nI share the same graph memory as your other Zivs. What should I start with?` });
   publish(id, { type: 'dots' });
   return c.json({ dot, conv });
 });
@@ -164,9 +164,9 @@ app.post('/api/groups', async (c) => {
   const id = user(c);
   const g = await userGraph(id);
   const { dots, name } = await c.req.json();
-  if (!Array.isArray(dots) || dots.length < 2) throw new HttpError(400, 'pick at least two dots');
+  if (!Array.isArray(dots) || dots.length < 2) throw new HttpError(400, 'pick at least two Zivs');
   const conv = await createGroup(g, dots, name);
-  await postMessage(id, g, { conv, role: 'system', text: 'Group created. The dots whose role fits will answer.' });
+  await postMessage(id, g, { conv, role: 'system', text: 'Group created. The Zivs whose role fits will answer.' });
   publish(id, { type: 'dots' });
   return c.json({ conv });
 });

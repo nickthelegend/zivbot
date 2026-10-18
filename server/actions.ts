@@ -11,7 +11,7 @@ import { postMessage, getDot } from './memory.ts';
 import { uid, when } from './util.ts';
 
 /**
- * Approvals: a dot never sends, books, runs or calls anything on its own —
+ * Approvals: a Ziv never sends, books, runs or calls anything on its own —
  * it creates a :Draft, and this is what happens when you approve it. Each
  * approved action is written back into the graph, so the next answer sees it.
  */

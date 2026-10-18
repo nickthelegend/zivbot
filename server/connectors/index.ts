@@ -157,7 +157,7 @@ export async function disconnect(userId: string, id: string) {
   publish(userId, { type: 'connector', id, status: 'available' });
 }
 
-/** Connector actions become :Tool nodes the dot can find by querying the graph. */
+/** Connector actions become :Tool nodes the Ziv can find by querying the graph. */
 async function registerActions(g: UserGraph, def: ConnectorDef) {
   if (!def.actions?.length) return;
   const cuid = `connector:${def.id}`;
@@ -177,7 +177,7 @@ export async function runConnectorAction(userId: string, g: UserGraph, connector
 // ------------------------------------------------------------------ tools for the agent
 
 /**
- * Tool selection through the graph: the dot asks the graph which connected
+ * Tool selection through the graph: the Ziv asks the graph which connected
  * tools fit the job (full-text over :Tool nodes from connectors and MCP
  * servers), then calls one. Mutating tools turn into approval drafts.
  */
