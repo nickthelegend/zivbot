@@ -77,6 +77,7 @@ export function reloadState(delay = 0) {
 }
 
 export async function boot() {
+  if ((window as any).__zivPairError) { set({ error: (window as any).__zivPairError, ready: false }); return; }
   try {
     await api.session();
     const s = await api.state();

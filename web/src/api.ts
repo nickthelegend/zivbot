@@ -52,7 +52,10 @@ export let relayCreds: { relay: string; sb: string; sbk: string } | null = (() =
 })();
 export let userId: string | null = (() => {
   // ?pair=<id> (LAN QR) or #pair=<id> (anywhere QR) adopts that user's graph on this device
-  const pair = new URLSearchParams(location.search).get('pair') || frag.get('pair');
+  // a relay link that lost its tail (sb/sbk) is broken, not a fresh account: don't adopt its id
+  const brokenRelay = !!frag.get('relay') && !(frag.get('sb') && frag.get('sbk'));
+  if (brokenRelay) (window as any).__zivPairError = 'That pairing link is incomplete — scan the QR again, or copy the whole link.';
+  const pair = brokenRelay ? null : new URLSearchParams(location.search).get('pair') || frag.get('pair');
   try {
     if (pair && /^[a-zA-Z0-9_-]{6,64}$/.test(pair)) { localStorage.setItem(KEY, pair); history.replaceState(null, '', location.pathname); }
     return localStorage.getItem(KEY);

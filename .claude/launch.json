@@ -1,7 +1,40 @@
 {
   "version": "0.0.1",
   "configurations": [
-    { "name": "zivbot-api", "runtimeExecutable": "npx", "runtimeArgs": ["tsx", "watch", "server/index.ts"], "port": 8787 },
-    { "name": "zivbot-web", "runtimeExecutable": "npx", "runtimeArgs": ["vite", "--port", "5173"], "port": 5173 }
+    {
+      "name": "zivbot-api",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": [
+        "tsx",
+        "watch",
+        "server/index.ts"
+      ],
+      "port": 8787
+    },
+    {
+      "name": "zivbot-web",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": [
+        "vite",
+        "--port",
+        "5173"
+      ],
+      "port": 5173
+    },
+    {
+      "name": "zivbot-mobile",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "mobile",
+        "run",
+        "start",
+        "--",
+        "--port",
+        "8081",
+        "--ios"
+      ],
+      "port": 8081
+    }
   ]
 }
