@@ -10,7 +10,9 @@ import json, math, os, re, subprocess, sys, shutil
 from PIL import Image, ImageDraw, ImageFont
 
 rec, script_path, vo, out = sys.argv[1:5]
-PAD = 1.3          # breath after each line
+TARGET = float(os.environ.get('TARGET', '0'))   # exact total length in seconds (0: natural)
+INTRO_IMG = os.environ.get('INTRO_IMG', '')
+PAD = 1.3          # breath after each line (recomputed when TARGET is set)
 FPS = 15           # output frame rate (frames are resampled from the 10 fps recording)
 W, H = 1440, 900
 
@@ -82,7 +84,54 @@ def card(lines_, seconds):
         k += 1
     return seconds
 
-intro = card([('ZivBot', TITLE, (255, 255, 255)), ('Agents that act on connected data', SUB, (255, 200, 160)), ('FalkorDB Graph Hacks · Track 1', SUB, (220, 214, 206))], 3.0)
+OUTRO = 4.0
+voiced = [m['id'] for m in marks[:-1] if m['id'] in lines]
+if INTRO_IMG and 's00' in lines: voiced = ['s00'] + voiced
+speech_total = sum(dur(os.path.join(vo, f'{sid}.wav')) for sid in voiced)
+if TARGET:
+    PAD = max(0.5, (TARGET - OUTRO - speech_total) / len(voiced))
+    print(f'pad {PAD:.2f}s per line to land on {TARGET}s')
+TITLE_BIG = font(96)
+
+def intro_scene(sid):
+    """The opening: the hero art pushing in slowly, the title rising out of the dark."""
+    global k
+    art = Image.open(INTRO_IMG).convert('RGB')
+    speech = dur(os.path.join(vo, f'{sid}.wav'))
+    T = speech + PAD
+    n = round(T * FPS)
+    caps = chunks(lines[sid]); words = [len(c.split()) for c in caps]; tw_ = sum(words)
+    starts, t = [], 0.0
+    for wc in words: starts.append(t); t += speech * wc / tw_
+    for j in range(n):
+        p = j / max(1, n - 1)
+        z = 1.0 + 0.10 * p
+        w, h = art.size
+        cw, ch = w / z, h / z
+        box = ((w - cw) / 2, (h - ch) * 0.35, (w + cw) / 2, (h - ch) * 0.35 + ch)
+        img = art.crop(tuple(int(v) for v in box)).resize((W, H), Image.LANCZOS)
+        fade = min(1.0, j / (0.8 * FPS))
+        img = Image.blend(Image.new('RGB', (W, H), (0, 0, 0)), img, fade)
+        d = ImageDraw.Draw(img, 'RGBA')
+        a = max(0.0, min(1.0, (j / FPS - 0.6) / 1.2))
+        if a > 0:
+            title = 'ZivBot'
+            tw = d.textlength(title, font=TITLE_BIG)
+            y = 120 - 18 * (1 - a)
+            d.text(((W - tw) / 2 + 3, y + 4), title, font=TITLE_BIG, fill=(0, 0, 0, int(160 * a)))
+            d.text(((W - tw) / 2, y), title, font=TITLE_BIG, fill=(255, 255, 255, int(255 * a)))
+            sub = 'Agents that act on your connected data  ·  built on FalkorDB'
+            sw = d.textlength(sub, font=SUB)
+            d.text(((W - sw) / 2, y + 120), sub, font=SUB, fill=(255, 200, 160, int(255 * a)))
+        ts = j / FPS
+        ci = max([c for c, s0 in enumerate(starts) if s0 <= ts] or [0])
+        if ts <= speech + 0.2: caption(img, caps[ci])
+        img.save(os.path.join(work, f'{k:06d}.jpg'), quality=92)
+        k += 1
+    scene_durs.append((sid, n / FPS))
+    return 0.0
+
+intro = intro_scene('s00') if INTRO_IMG and 's00' in lines else card([('ZivBot', TITLE, (255, 255, 255)), ('Agents that act on connected data', SUB, (255, 200, 160)), ('FalkorDB Graph Hacks · Track 1', SUB, (220, 214, 206))], 3.0)
 for i, m in enumerate(marks[:-1]):
     sid = m['id']
     if sid not in lines:
@@ -114,10 +163,11 @@ for i, m in enumerate(marks[:-1]):
     scene_durs.append((sid, n_out / FPS))
     print(sid, f'{len(src)} frames -> {n_out} ({n_out / FPS:.1f}s, speech {speech:.1f}s)', flush=True)
 
-outro = card([('Try it live: zivbot.vercel.app', SUB, (255, 255, 255)), ('github.com/nickthelegend/zivbot', SUB, (255, 200, 160)), ('Built on FalkorDB · one graph per user · MCP', SUB, (220, 214, 206))], 5.0)
+if INTRO_IMG: HERO = INTRO_IMG
+outro = card([('ZivBot', TITLE, (255, 255, 255)), ('Try it live: zivbot.vercel.app', SUB, (255, 255, 255)), ('github.com/nickthelegend/zivbot', SUB, (255, 200, 160)), ('Built on FalkorDB · one graph per user · MCP', SUB, (220, 214, 206))], OUTRO)
 
 # audio: silence under the title, each line padded to its scene length, silence under the end card
-inputs, filters = ['-f', 'lavfi', '-t', f'{intro:.3f}', '-i', 'anullsrc=r=48000:cl=stereo'], ['[0:a]anull[a0]']
+inputs, filters = ['-f', 'lavfi', '-t', f'{max(intro, 0.001):.3f}', '-i', 'anullsrc=r=48000:cl=stereo'], ['[0:a]anull[a0]']
 for idx, (sid, d) in enumerate(scene_durs, start=1):
     inputs += ['-i', os.path.join(vo, f'{sid}.wav')]
     filters.append(f'[{idx}:a]aresample=48000,aformat=channel_layouts=stereo,apad=whole_dur={d:.3f}[a{idx}]')
@@ -129,4 +179,4 @@ audio = os.path.join(rec, 'voice.m4a')
 subprocess.check_call(['ffmpeg', '-y', '-v', 'error', *inputs, '-filter_complex', ';'.join(filters) + ';' + concat, '-map', '[aout]', '-c:a', 'aac', '-b:a', '160k', audio])
 subprocess.check_call(['ffmpeg', '-y', '-v', 'error', '-framerate', str(FPS), '-i', os.path.join(work, '%06d.jpg'), '-i', audio,
                        '-c:v', 'libx264', '-preset', 'slow', '-crf', '23', '-pix_fmt', 'yuv420p', '-r', '30', '-c:a', 'copy', '-shortest', '-movflags', '+faststart', out])
-print('wrote', out, f'{intro + sum(d for _, d in scene_durs) + outro:.1f}s')
+print('wrote', out, f'{intro + sum(d for _, d in scene_durs) + outro:.2f}s')

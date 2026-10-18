@@ -1,80 +1,92 @@
 [
  {
+  "id": "s00",
+  "text": "Meet the Zivs. Small AI agents that live on a FalkorDB graph of your real work, and act on it, with your permission. This is ZivBot.",
+  "cfg": 0.3,
+  "exaggeration": 0.55
+ },
+ {
   "id": "s01",
-  "text": "This is ZivBot, running on my own accounts. No sample data: my real Gmail and my real GitHub, mapped into one FalkorDB graph. Small agents, called Zivs, read that graph and act on it.",
-  "cfg": 0.35,
-  "exaggeration": 0.5
+  "text": "Here's a brand new account, with zero chats. Ziv says hello, asks what to call me, and then asks me to connect my world.",
+  "cfg": 0.3,
+  "exaggeration": 0.55
  },
  {
   "id": "s02",
-  "text": "Connecting is one click, like in Claude or ChatGPT. Sign in with Google brings in Gmail and Calendar. Sign in with GitHub brings in my repositories, issues and pull requests.",
-  "cfg": 0.35,
-  "exaggeration": 0.5
+  "text": "Connecting is one click, the way it works in Claude or ChatGPT. Sign in with Google. I pick my account in the browser, and my Gmail and Calendar stream straight into my own FalkorDB graph.",
+  "cfg": 0.3,
+  "exaggeration": 0.55
  },
  {
   "id": "s03",
-  "text": "It all lands in FalkorDB, in a graph that is mine alone. Email threads, people, repos, files and issues become nodes and edges. This is the live schema, with full text and vector indexes.",
-  "cfg": 0.35,
-  "exaggeration": 0.5
+  "text": "Then, Sign in with GitHub. My most recent repositories, with their contributors, issues, pull requests and files, are mapped in and linked to me.",
+  "cfg": 0.3,
+  "exaggeration": 0.55
  },
  {
   "id": "s04",
-  "text": "FalkorDB's own algorithms run as tools. PageRank finds the people at the center of my work. Label propagation finds who really works together.",
-  "cfg": 0.35,
-  "exaggeration": 0.5
+  "text": "Here is that graph. Email threads, people, repositories, files and issues become nodes and edges. Every user gets their own isolated graph, with full text and vector indexes built in.",
+  "cfg": 0.3,
+  "exaggeration": 0.55
  },
  {
   "id": "s05",
-  "text": "Now a real question. Which emails haven't I replied to? The graph planner answers instantly, straight from my inbox.",
-  "cfg": 0.35,
-  "exaggeration": 0.5
+  "text": "FalkorDB's own algorithms run as tools the Zivs can call. PageRank finds who sits at the center of my work. Label propagation finds who really works together.",
+  "cfg": 0.3,
+  "exaggeration": 0.55
  },
  {
   "id": "s06",
-  "text": "Show path opens the exact Cypher behind the answer, with row counts and timings. No black box.",
-  "cfg": 0.35,
-  "exaggeration": 0.5
+  "text": "Now a real question. Which emails haven't I replied to? The graph planner answers instantly, straight from my inbox, newest first.",
+  "cfg": 0.3,
+  "exaggeration": 0.55
  },
  {
   "id": "s07",
-  "text": "And I can pick the model, per chat. Here it's Codex, on my own ChatGPT subscription. It calls ZivBot's graph tools over MCP, and its Cypher still shows up under the answer.",
-  "cfg": 0.35,
-  "exaggeration": 0.5
+  "text": "Show path opens the exact Cypher behind that answer, with row counts and timings. No black box, ever.",
+  "cfg": 0.3,
+  "exaggeration": 0.55
  },
  {
   "id": "s08",
-  "text": "Or Claude, on my Claude plan. Same graph, same tools. Who works with me on Loom? It follows the contributor edges and answers.",
-  "cfg": 0.35,
-  "exaggeration": 0.5
+  "text": "And I can pick the model, per chat. Here it's Codex, on my own ChatGPT subscription. It calls ZivBot's graph tools over MCP, and its Cypher still lands under the answer.",
+  "cfg": 0.3,
+  "exaggeration": 0.55
  },
  {
   "id": "s09",
-  "text": "Zivs act, but only with my approval. Draft a reply to Nivesh. The draft waits right here. Nothing is sent until I approve it, and then it goes out through my real Gmail.",
-  "cfg": 0.35,
-  "exaggeration": 0.5
+  "text": "Or Claude, on my Claude plan. Same graph, same tools, a different brain. It follows the contributor edges and answers.",
+  "cfg": 0.3,
+  "exaggeration": 0.55
  },
  {
   "id": "s10",
-  "text": "Zivs are cheap to make. I add Ledger, a finance Ziv, from a template. They all share one graph memory, and they message each other.",
-  "cfg": 0.35,
-  "exaggeration": 0.5
+  "text": "Zivs act, but only with my approval. Draft a reply. The draft waits right here. Nothing is sent until I approve it, and then it goes out through my real Gmail.",
+  "cfg": 0.3,
+  "exaggeration": 0.55
  },
  {
   "id": "s11",
-  "text": "Now my phone. This QR code opens an end to end encrypted channel to this laptop, over Supabase Realtime. It works from any network, as long as the laptop is on.",
-  "cfg": 0.35,
-  "exaggeration": 0.5
+  "text": "Zivs are cheap to make. I add Ledger, a finance Ziv, from a template. They all share one graph memory, and they message each other.",
+  "cfg": 0.3,
+  "exaggeration": 0.55
  },
  {
   "id": "s12",
-  "text": "On the iPhone, it's the same Zivs and the same graph, answering from my laptop, wherever I am.",
-  "cfg": 0.35,
-  "exaggeration": 0.5
+  "text": "Now my phone. This QR code opens an end to end encrypted channel to this laptop, over Supabase Realtime. It works from any network, as long as the laptop is on.",
+  "cfg": 0.3,
+  "exaggeration": 0.55
  },
  {
   "id": "s13",
-  "text": "And every graph tool is also an MCP server. Here a real Codex session calls ZivBot's triage tool on my graph. ZivBot: agents that act on your real data, with FalkorDB at the center.",
-  "cfg": 0.35,
-  "exaggeration": 0.5
+  "text": "On the iPhone, it's the same Zivs and the same graph, answering from my laptop, wherever I am.",
+  "cfg": 0.3,
+  "exaggeration": 0.55
+ },
+ {
+  "id": "s14",
+  "text": "And every graph tool is an MCP server too. Here, a real Codex session calls ZivBot's triage tool on my graph. ZivBot. Agents that act on your real, connected data, with FalkorDB at the center.",
+  "cfg": 0.3,
+  "exaggeration": 0.55
  }
 ]

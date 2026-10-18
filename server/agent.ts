@@ -298,7 +298,13 @@ export async function afterConnect(userId: string, counts: Record<string, unknow
   const g = await userGraph(userId);
   const dots = await listDots(g);
   const waiting = dots.find((d) => d.stage === 'onboard:connect');
-  if (!waiting) return;
+  if (!waiting) {
+    // already onboarded: just say what landed
+    const main = dots[0];
+    const got = Object.entries(counts).filter(([, v]) => typeof v === 'number' && v > 0).map(([k, v]) => `${v} ${k}`).join(', ');
+    if (main?.conv && got) await postMessage(userId, g, { conv: main.conv, role: 'assistant', dot: main.uid, text: `That's in too: I mapped ${got} into your graph, linked to everything else.` });
+    return;
+  }
   await updateDot(g, waiting.uid, { stage: 'ready' });
   const summary = Object.entries(counts).filter(([, v]) => typeof v === 'number' && v > 0).map(([k, v]) => `${v} ${k}`).join(', ');
   const say = (t: string, cards?: Card[]) => postMessage(userId, g, { conv: waiting.conv, role: 'assistant', text: t, cards, dot: waiting.uid });

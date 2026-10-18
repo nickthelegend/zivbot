@@ -6,9 +6,9 @@
 
 > 🏁 **Graph Hacks: Context for AI Agents** (WeMakeDevs × FalkorDB)
 > **Track:** Agents That Act on Connected Data (primary). It also covers Agent Memory and Coordination: per-user graphs, episodic/semantic/procedural memory, and Ziv-to-Ziv handoffs.
-> **Demo video (2:12):** [watch](https://zivbot.vercel.app/demo.mp4) · [file](docs/zivbot-demo.mp4) · **Live:** [zivbot.vercel.app](https://zivbot.vercel.app) · **Built in:** Oct 15–18, 2026
+> **Demo video (3:00):** [watch](https://zivbot.vercel.app/demo.mp4) · [file](docs/zivbot-demo.mp4) · **Live:** [zivbot.vercel.app](https://zivbot.vercel.app) · **Built in:** Oct 15–18, 2026
 
-<p align="center"><a href="https://zivbot.vercel.app/demo.mp4"><b>▶ Watch the 3-minute demo</b></a>: the real app on a real Gmail and GitHub account (one-click Google and GitHub sign-in), the per-chat model picker answering through Codex and Claude on my own subscriptions, an iPhone reaching the laptop over the encrypted relay, and Codex calling ZivBot over MCP. Voiceover by Chatterbox TTS.</p>
+<p align="center"><a href="https://zivbot.vercel.app/demo.mp4"><b>▶ Watch the 3-minute demo</b></a>: the real app from a brand-new account with zero chats: onboarding, one-click Sign in with Google and Sign in with GitHub on real accounts, the per-chat model picker answering through Codex and Claude on my own subscriptions, an iPhone reaching the laptop over the encrypted relay, and Codex calling ZivBot over MCP. Voiceover by Chatterbox TTS.</p>
 
 <p align="center"><img src="docs/screenshots/chat.png" width="880" alt="Ziv triaging from the graph"></p>
 
@@ -605,7 +605,7 @@ demo/              lumen-payments: the synthetic repo the coding agents fix
 
 ## How the demo video was made
 
-There are no mocks in it. `desktop/scripts/record-real.cjs` drives the real app in an offscreen Electron window against the local API and FalkorDB, capturing 10 frames a second. It runs on a user signed in with real Google and GitHub accounts. In that recording it:
+There are no mocks in it. `desktop/scripts/record-fresh.cjs` starts from a brand-new user (zero chats), goes through onboarding, and clicks **Sign in with Google** and **Sign in with GitHub**; the developer completes both consents in the browser. Then it drives the real app in an offscreen Electron window against the local API and FalkorDB, capturing 10 frames a second. It runs on a user signed in with real Google and GitHub accounts. In that recording it:
 
 - shows the connected accounts, the graph, its schema, and PageRank and label propagation over the real collaborators;
 - asks questions answered by the graph planner, then by **Codex** and by **Claude**, picked in the composer's model menu, and opens Show path;
@@ -619,7 +619,7 @@ The voiceover is [Chatterbox TTS](https://github.com/resemble-ai/chatterbox) run
 
 ## Built with AI assistance (rule 11)
 
-ZivBot was built during the hackathon with **Claude Code** (Anthropic) as a coding assistant, plus a background sub-agent that wrote the API-key connector adapters. The logo, character art and hero image were generated with ChatGPT image generation and cut out locally (originals in `brand/`). The product direction, the graph model decisions, testing against real coding agents and the review are the team's. The coding-agent runner and quota detection are adapted from the author's own open-source project [Loom](https://github.com/nickthelegend/loom).
+ZivBot was built during the hackathon with **Claude Code** (Anthropic) as a coding assistant, plus a background sub-agent that wrote the API-key connector adapters. The logo, character art, hero image and the video's opening shot were generated with ChatGPT image generation and cut out locally (originals in `brand/`). The product direction, the graph model decisions, testing against real coding agents and the review are the team's. The coding-agent runner and quota detection are adapted from the author's own open-source project [Loom](https://github.com/nickthelegend/loom).
 
 ## License
 
