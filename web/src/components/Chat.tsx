@@ -228,7 +228,7 @@ function Composer({ conv, placeholder }: { conv: string; placeholder: string }) 
         </div>
           <button className="chip-btn" onClick={() => { const pos = ta.current?.selectionStart ?? text.length; const next = `${text.slice(0, pos)}${text && !/\s$/.test(text.slice(0, pos)) ? ' ' : ''}@${text.slice(pos)}`; setText(next); setMClosed(false); const p = pos + (next.length - text.length); setCaret(p); requestAnimationFrame(() => { ta.current?.focus(); ta.current?.setSelectionRange(p, p); }); }} title="Mention a dot or plugin">@ Mention</button>
           {graph && <button className="chip-btn info" onClick={() => set({ view: 'graph' })} title={`FalkorDB graph ${graph.graph}`}><i className="pulse" />{graph.nodes.toLocaleString()} nodes</button>}
-          <span className="chip-btn info static" title="What the dots think with">{brain === 'graph-planner' ? 'Graph planner' : brain.replace(/^llm:/, '').split('/').pop()}</span>
+          <span className="chip-btn info static" title="What the dots think with">{brain === 'graph-planner' ? 'Graph planner' : brain.startsWith('hybrid:') ? `Planner + ${brain.split('/').pop()?.replace(/:free$/, '')}` : brain.replace(/^llm:/, '').split('/').pop()}</span>
           <span className="grow" />
           <button aria-label="Dictate" className={`icon-btn round ${listening ? 'live' : ''}`} onClick={dictate} title="Dictate"><Icon.mic size={17} /></button>
           {text.trim() ? (

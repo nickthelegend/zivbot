@@ -146,7 +146,7 @@ export const tools: Tool[] = [
       const nb = await g.q(
         `MATCH (n {uid:$u})-[r]-(m)
          WHERE NOT (m:Episode OR m:Answer OR m:Draft OR m:Dot OR m:Conversation OR m:Connector) AND NOT type(r) IN ['COLLABORATES', 'IN_TOUCH', 'CLOSE_TO']
-         RETURN type(r) AS rel, startNode(r) = n AS out, m.uid AS uid, m.name AS name, [l IN labels(m) WHERE l <> 'Searchable'][0] AS label
+         RETURN type(r) AS rel, startNode(r) = n AS out, m.uid AS uid, m.name AS name, m.status AS status, [l IN labels(m) WHERE l <> 'Searchable'][0] AS label
          LIMIT 60`,
         { u: n.uid },
         `neighbours of ${n.name}`,
@@ -155,7 +155,7 @@ export const tools: Tool[] = [
       const groups = new Map<string, string[]>();
       for (const r of nb) {
         const key = r.out ? `→ ${r.rel}` : `← ${r.rel}`;
-        groups.set(key, [...(groups.get(key) || []), `${r.name} (${r.label})`]);
+        groups.set(key, [...(groups.get(key) || []), `${r.name} (${r.label}${r.status ? `, ${r.status}` : ''})`]);
       }
       return {
         text: `**${n.name}** — ${n.label}${node.n.rank ? ` · PageRank ${Number(node.n.rank).toFixed(3)}` : ''}${node.n.criticality ? ` · dependency PageRank ${Number(node.n.criticality).toFixed(3)}` : ''}\n${props.map((p) => `- ${p}`).join('\n')}\n\nConnections:\n${[...groups].map(([k, v]) => `- ${k}: ${v.slice(0, 8).join(', ')}${v.length > 8 ? ` +${v.length - 8}` : ''}`).join('\n')}`,
@@ -1368,11 +1368,39 @@ export const tools: Tool[] = [
     description: 'Search long-term memory: facts, procedures and past conversation episodes related to a topic.',
     params: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] },
     async run({ g }, { query }) {
+      // nothing to search for (or "me"): everything I've been told, newest first
+      if (!String(query || '').trim() || /^\s*(me|us|you|everything)\s*$/i.test(query)) {
+        const all = await g.q(`MATCH (m) WHERE (m:Fact OR m:Procedure) AND m.status = 'active' OPTIONAL MATCH (m)-[:ABOUT]->(x) RETURN m.uid AS uid, m.text AS text, labels(m)[0] AS label, m.at AS at, collect(x.name) AS about ORDER BY m.at DESC`, {}, 'everything you told me');
+        return { text: all.length ? `What you've told me (${all.length}):\n${all.map((r) => `- ${r.label === 'Procedure' ? '**How you like things:** ' : ''}${r.text} _(${ago(r.at)}${r.about.length ? ` · about ${r.about.join(', ')}` : ''})_`).join('\n')}\n\nSay "forget that …" to drop one.` : 'You haven\'t told me anything to remember yet. Say "remember that …".', data: all };
+      }
       const hits = [...(await search(g, query, ['Fact', 'Procedure', 'Episode'], 6)), ...(await semanticSearch(g, query, { labels: ['Fact', 'Procedure', 'Episode', 'Decision'], k: 5 })).hits];
       const ent = await resolve(g, query);
       const linked = ent ? await g.q(`MATCH (m)-[:ABOUT]->({uid:$u}) WHERE (m:Fact OR m:Procedure) AND m.status = 'active' RETURN m.uid AS uid, m.text AS text, labels(m)[0] AS label`, { u: ent.uid }, `memories about ${ent.name}`) : [];
       const rows = await g.q(`MATCH (m) WHERE m.uid IN $ids RETURN m.uid AS uid, coalesce(m.text, m.name) AS text, [l IN labels(m) WHERE l <> 'Searchable'][0] AS label, m.at AS at`, { ids: [...new Set([...hits.map((h) => h.uid), ...linked.map((l) => l.uid)])] }, 'load memories');
       return { text: rows.length ? rows.map((r) => `- (${r.label}) ${clip(r.text, 160)}`).join('\n') : 'No memories about that yet.', data: rows };
+    },
+  },
+
+  {
+    name: 'forget',
+    description: 'Retract a memory that is no longer true ("Raj\'s leave got cancelled", "forget that Kate prefers calls"). Finds the active fact or procedure that best matches and marks it retracted, keeping its history.',
+    params: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] },
+    async run({ g }, { text }) {
+      const dict = await loadDictionary(g);
+      const about = mentionsIn(dict, text);
+      const words = String(text).toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((w) => w.length > 3 && !/^(forget|that|this|about|cancel+ed|scratch|disregard|longer|true|anymore|got|was|is)$/.test(w)).map((w) => w.replace(/(ing|ed|s)$/, ''));
+      const mem = await g.q(
+        `MATCH (m) WHERE (m:Fact OR m:Procedure) AND m.status = 'active'
+         OPTIONAL MATCH (m)-[:ABOUT]->(x)
+         RETURN m.uid AS uid, m.text AS text, m.at AS at, collect(x.uid) AS about ORDER BY m.at DESC`,
+        {},
+        'active memories',
+      );
+      const score = (m: any) => (m.about as string[]).filter((u) => about.includes(u)).length * 3 + words.filter((w) => String(m.text).toLowerCase().includes(w)).length;
+      const best = mem.map((m) => ({ ...m, s: score(m) })).filter((m) => m.s >= 2).sort((a, b) => b.s - a.s)[0];
+      if (!best) return { text: `I couldn't find a memory that matches — here's what I hold:\n${mem.slice(0, 5).map((m) => `- ${m.text}`).join('\n') || '- nothing yet'}` };
+      await g.q(`MATCH (m {uid:$u}) SET m.status = 'retracted', m.retractedAt = $now, m.retractedBy = $why`, { u: best.uid, now: Date.now(), why: clip(text, 120) }, 'retract the memory (kept for history)');
+      return { text: `Done — I've stopped using “${best.text}” (from ${ago(best.at)}). It stays in the graph's history as retracted, and no dot will rely on it.`, data: best };
     },
   },
 

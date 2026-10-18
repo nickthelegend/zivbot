@@ -81,6 +81,11 @@ export async function loadDictionary(g: UserGraph): Promise<Dictionary> {
     if (r.label === 'Ticket') add(r.key, r.uid);
     const f = firstOf(r);
     if (f && (r.first || firsts.get(f.toLowerCase()) === 1)) add(f, r.uid);
+    // "Kestrel" = Kestrel Homes, "Brightwave" = Brightwave Energy (when no other name starts that way)
+    if (r.label === 'Org' && /\s/.test(r.name || '')) {
+      const w = String(r.name).split(/\s+/)[0];
+      if (w.length >= 4 && rows.filter((x) => String(x.name || '').toLowerCase().startsWith(w.toLowerCase())).length === 1) add(w, r.uid);
+    }
     for (const a of (r.aliases as string[] | null) || []) add(a, r.uid);
   }
   // Longer terms first so "payments-api" wins over "payments".

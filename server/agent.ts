@@ -1,7 +1,7 @@
 import { userGraph, withTrace, type Trace, type UserGraph } from './graph.ts';
 import { publish } from './bus.ts';
 import { config, llmEnabled } from './config.ts';
-import { chat, type ChatMsg } from './llm.ts';
+import { chat, llmBudgetLeft, type ChatMsg } from './llm.ts';
 import { tools, toolByName as builtinTool, type Card, type Ctx } from './tools.ts';
 import { connectorTools } from './connectors/index.ts';
 import { plan, triageReply } from './planner.ts';
@@ -46,11 +46,21 @@ export async function think(userId: string, dot: DotInfo, conv: string, text: st
   let r: Omit<Reply, 'answer'>;
   try {
     r = await withTrace(trace, async () => {
-      if (llmEnabled()) {
-        try { const x = await llmTurn(ctx, dot, conv, text, opts.from); delegated.push(...x.delegated); return { text: x.text, cards: x.cards, tools: x.tools, mode: `llm:${config.llm.model}` }; }
-        catch (e: any) { console.warn('[llm] falling back to planner:', e.message); }
+      const viaModel = async () => {
+        const x = await llmTurn(ctx, dot, conv, text, opts.from);
+        delegated.push(...x.delegated);
+        return { text: x.text, cards: x.cards, tools: x.tools, mode: `llm:${config.llm.model}` };
+      };
+      if (llmEnabled() && config.llm.mode === 'llm' && llmBudgetLeft() > 0) {
+        try { return await viaModel(); } catch (e: any) { console.warn('[llm] falling back to planner:', e.message); }
       }
-      return { ...(await plan(ctx, text, { dot, from: opts.from, inGroup: opts.inGroup, delegate: async (to, goal) => { const x = await messageDot(userId, dot, to, goal); if (x.answer) delegated.push(x.answer); return x; } })), mode: 'graph-planner' };
+      // Hybrid: the graph planner answers what it recognises (fast, free, deterministic); when it isn't
+      // sure, the model reads the question and picks from the same graph tools itself.
+      const p = await plan(ctx, text, { dot, from: opts.from, inGroup: opts.inGroup, delegate: async (to, goal) => { const x = await messageDot(userId, dot, to, goal); if (x.answer) delegated.push(x.answer); return x; } });
+      if (p.confident === false && llmEnabled() && llmBudgetLeft() > 0) {
+        try { return await viaModel(); } catch (e: any) { console.warn('[llm] keeping the planner answer:', e.message); }
+      }
+      return { ...p, mode: 'graph-planner' };
     });
   } catch (e: any) {
     console.error('[turn]', e);
@@ -157,12 +167,13 @@ async function llmTurn(ctx: Ctx, dot: DotInfo, conv: string, text: string, from?
   const wc = await workingContext(ctx.g, conv, text);
   const others = (await listDots(ctx.g)).filter((d) => d.uid !== dot.uid).map((d) => `${d.name} (${d.role})`);
   const sys = `You are ${dot.name}, a personal agent ("dot") in ZivBot. Your role: ${dot.role}.
-You run on your own computer. Everything you know lives in the user's FalkorDB knowledge graph: their apps (mail, calendar, Slack, Notion, Linear, GitHub…), their company (people, teams, customers, systems), their coding-agent subscriptions (Codex, Claude Code, Cursor, OpenCode, Grok, Antigravity), and your memory.
+${config.hosted ? 'You run on the ZivBot web demo over a synthetic company (Lumen Labs); coding agents run in the desktop app, so for code fixes create the approval draft and say so.' : 'You run on your own computer.'} Everything you know lives in the user's FalkorDB knowledge graph: their apps (mail, calendar, Slack, Notion, Linear, GitHub…), their company (people, teams, customers, systems), their coding-agent subscriptions (Codex, Claude Code, Cursor, OpenCode, Grok, Antigravity), and your memory.
 Rules:
 - Ground every claim in tool results. Prefer the specific graph tools; use run_cypher only when none fits; use find_tools/use_tool for connected apps.
 - Act, don't just answer: when something can be fixed, drafted, scheduled or decided, call the tool that creates the approval card. Nothing is sent or run without approval.
 - Delegate to a specialist dot with message_dot when the work is theirs.
-- Be brief and warm. Short markdown: bold names, numbered lists for rankings. Never invent people, numbers or tickets.
+- Be brief and warm. Lead with the direct answer in one sentence (yes/no, a name, a number, a date), then the evidence. Short markdown: bold names, numbered lists for rankings. Never invent people, numbers, dates or tickets; if the graph doesn't hold it, say so plainly.
+- Call at most two tools before answering.
 ${from ? `This message is from your colleague dot ${from}, not the user. Do the work and reply to them concisely.` : ''}
 Other dots: ${others.join('; ') || 'none'}.
 Memories that apply:\n${wc.memories.map((m) => `- (${m.kind}) ${m.text}`).join('\n') || '- none'}
@@ -177,8 +188,12 @@ Now: ${new Date().toString()}`;
   const cards: Card[] = [];
   const used: string[] = [];
   const delegatedLlm: string[] = [];
-  for (let step = 0; step < 7; step++) {
-    const m = await chat(msgs, defs);
+  // every step is a model call against a daily budget: keep turns short
+  const MAX = 4;
+  for (let step = 0; step < MAX; step++) {
+    // last step: no more tools — answer from what the tools returned
+    if (step === MAX - 1) msgs.push({ role: 'user', content: 'Answer now from the tool results above. Lead with the direct answer, then the evidence. Do not call more tools.' });
+    const m = await chat(msgs, step === MAX - 1 ? undefined : defs);
     if (!m.tool_calls?.length) return { text: m.content || '…', cards, tools: used, delegated: delegatedLlm };
     msgs.push({ role: 'assistant', content: m.content ?? null, tool_calls: m.tool_calls });
     for (const call of m.tool_calls) {

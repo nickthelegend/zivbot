@@ -29,7 +29,7 @@ async function entities(g: UserGraph, text: string): Promise<Ent[]> {
   return uids.sort((a, b) => pos(a) - pos(b)).filter((u) => u !== 'person:me').map((u) => ({ uid: u, label: labelOf(u) }));
 }
 
-export type PlanResult = { text: string; cards: Card[]; tools: string[] };
+export type PlanResult = { text: string; cards: Card[]; tools: string[]; confident?: boolean };
 
 export type PlanOpts = {
   dot?: { uid: string; name: string; role: string };
@@ -52,6 +52,9 @@ export async function plan(ctx: Ctx, input: string, opts: PlanOpts = {}): Promis
   };
   let remembered = '';
   const done = (text: string): PlanResult => ({ text: remembered ? `${remembered}\n\n${text}` : text, cards, tools: used });
+  // the planner's best guess, not a recognised question: the model may take over (see think())
+  // a memory that answers the question beats a guess: say what you were told, skip the dump
+  const unsure = (text: string): PlanResult => (remembered ? { text: `${remembered}\n\nAsk me for more on it if you need the details.`, cards: [], tools: used } : { ...done(text), confident: false });
   const ents = await entities(ctx.g, t);
   const first = (...labels: string[]) => ents.find((e) => labels.includes(e.label));
   // what you told me comes first: a question about someone or something I hold a memory on gets it back
@@ -112,6 +115,16 @@ export async function plan(ctx: Ctx, input: string, opts: PlanOpts = {}): Promis
 
   if (/^(what can you do|help|what do you do)\??$/i.test(t)) {
     return done(`Here's what I can do with your graph:\n- **Triage** — "what needs me?" ranks mail, incidents, decisions and calendar clashes by who and what they touch\n- **Act** — "fix LUM-142" picks the best coding agent from your subscriptions and runs it once you approve\n- **Trace** — "why did we move to Stripe?", "who knows billing-db?", "what breaks if auth-service goes down?"\n- **Coordinate** — "ask Forge to …" sends work to another dot; they share my memory\n- **Remember** — "remember that Kate prefers calls" — every dot uses it\n\nTap the path icon under any answer to see the Cypher and the nodes behind it.`);
+  }
+
+  // ---- memory: forget / no longer true
+  if (/\b(forget|scratch that|disregard|no longer true|isn'?t true|not true any ?more|got cancel+ed|is cancel+ed|was cancel+ed|cancel+ed)\b/.test(low)) {
+    const r = await call('forget', { text: t });
+    return done(r.text);
+  }
+  // ---- memory: "what do you remember (about me / about X)?"
+  if (/\bwhat (do|did) you (remember|know)( about (me|us))?\??$|\bwhat have i told you\b|\bmy (notes|preferences|memories)\b/.test(low)) {
+    return done((await call('recall', { query: '' })).text);
   }
 
   // ---- memory writes
@@ -276,6 +289,24 @@ export async function plan(ctx: Ctx, input: string, opts: PlanOpts = {}): Promis
   if (/\b(block(ed|ing|ers?)?|stuck|holding .* (up|back)|critical path|unblock|what stands between|when can we (ship|launch))\b/.test(low)) {
     const x = first('Project');
     if (x) return done((await call('critical_path', { project: x.uid })).text);
+  }
+
+  // ---- "is Raj on leave?" — a yes/no from what you told me (including what you later retracted)
+  if (/^(is|are|will)\b.*\b(on leave|out|away|off|on holiday|on vacation|sick)\b/.test(low) && first('Person')) {
+    const p = first('Person')!;
+    const notes = (await ctx.g.q(
+      `MATCH (m:Fact)-[:ABOUT]->(:Person {uid:$u}) RETURN m.text AS text, m.status AS status, m.at AS at, m.retractedAt AS gone ORDER BY m.at DESC`,
+      { u: p.uid },
+      'what you told me about them',
+    )).filter((m) => /\b(leave|out|away|off|holiday|vacation|sick|pto)\b/i.test(m.text));
+    const n = notes[0];
+    if (n) {
+      remembered = '';
+      const head = n.status === 'active' ? `**Yes — you told me** (${ago(n.at)}): “${n.text}”.` : `**No — that was cancelled.** You told me “${n.text}”, then retracted it ${ago(n.gone || n.at)}.`;
+      if (n.status !== 'active') return done(head);
+      return done(`${head}\n\nWhile they're out:\n${(await call('what_if_absent', { person: p.uid })).text}`);
+    }
+    return done(`Nothing in the graph says so — no note from you and no time off on the calendar. If they will be, tell me ("remember that … is on leave from …") and I'll plan around it.`);
   }
 
   // ---- absence simulation: "what if Priya is out next week?", "who covers for Raj?"
@@ -568,7 +599,11 @@ export async function plan(ctx: Ctx, input: string, opts: PlanOpts = {}): Promis
   // ---- yes/no questions about a thing get a judgement, never a property dump
   if (/^(is|are|does|do|can|will|has|have|was|were|am)\b/.test(low) && ents.length) {
     const x = ents[0];
-    if (x.label === 'Person') return done((await call('workload', { person: x.uid })).text);
+    if (x.label === 'Person') {
+      const ext = await ctx.g.one(`MATCH (p:Person {uid:$u}) OPTIONAL MATCH (p)-[:WORKS_AT]->(o:Org) RETURN coalesce(p.external, false) AS external, o.uid AS org, o.kind AS kind`, { u: x.uid }, 'are they one of us?');
+      if (ext?.external && ext.org) return done((await call('customer_health', { org: ext.org })).text);
+      return done((await call('workload', { person: x.uid })).text);
+    }
     if (x.label === 'Org') return done((await call('customer_health', { org: x.uid })).text);
     if (x.label === 'System') return done((await call(/\b(slow|broken|down|failing|ok|okay|fine|healthy|working)\b/.test(low) ? 'diagnose' : 'blast_radius', /\b(slow|broken|down|failing|ok|okay|fine|healthy|working)\b/.test(low) ? { system: x.uid } : { ref: x.uid })).text);
     if (x.label === 'Project') return done((await call('critical_path', { project: x.uid })).text);
@@ -587,9 +622,9 @@ export async function plan(ctx: Ctx, input: string, opts: PlanOpts = {}): Promis
   // fuzzy, "anything about…" questions go to semantic memory + graph expansion
   if (/^(anything|has anyone|did anyone|what('s| is| has) (the team|everyone|anyone) (said|saying)|any (mention|talk|news))|\b(similar to|related to|reminds)\b/.test(low) || (!ents.length && t.split(/\s+/).length > 3)) {
     const r = await call('semantic_search', { query: t });
-    if ((r.data as any)?.hits?.length) return done(r.text);
+    if ((r.data as any)?.hits?.length) return unsure(r.text);
     // nothing close by meaning: tell the story of what they named, or try the words themselves
-    if (ents[0]) return done((await call('timeline', { ref: ents[0].uid })).text);
+    if (ents[0]) return unsure((await call('timeline', { ref: ents[0].uid })).text);
     // only things with names worth opening, only real matches, and only for short asks —
     // a long sentence that matched nothing by meaning is not rescued by one shared word
     const content = t.toLowerCase().split(/[^\p{L}\p{N}-]+/u).filter((w) => w.length > 3 && !/^(anything|about|what|which|does|have|there|their|this|that|with|from|when|where|tell|show|please|could|would|should)$/.test(w));
@@ -597,21 +632,21 @@ export async function plan(ctx: Ctx, input: string, opts: PlanOpts = {}): Promis
     used.push('search_graph');
     if (words.length) {
       cards.push({ type: 'options', question: 'Ask about one of these', options: words.slice(0, 4).map((h: Row, i: number) => ({ key: String.fromCharCode(65 + i), label: `${h.label}: ${String(h.name).slice(0, 48)}`, value: `Tell me about ${h.name}` })) });
-      return done(`Nothing matches that closely, but these mention the same words:\n${words.map((h: Row) => `- ${h.label} **${h.name}**`).join('\n')}`);
+      return unsure(`Nothing matches that closely, but these mention the same words:\n${words.map((h: Row) => `- ${h.label} **${h.name}**`).join('\n')}`);
     }
-    return done(fallback(cards));
+    return unsure(fallback(cards));
   }
 
   // "tell me about X", "who is X", or a bare entity name
   const x = ents[0];
-  if (x) return done((await call('describe_entity', { ref: x.uid })).text);
+  if (x) return unsure((await call('describe_entity', { ref: x.uid })).text);
   const hits = await search(ctx.g, t, undefined, 6);
   used.push('search_graph');
   if (hits.length) {
-    if (hits[0].score > 1.5 * (hits[1]?.score || 0)) return done((await call('describe_entity', { ref: hits[0].uid })).text);
-    return done(`Here's what I found in your graph:\n${hits.map((h: Row) => `- ${h.label} **${h.name}**`).join('\n')}\n\nAsk me about any of them.`);
+    if (hits[0].score > 1.5 * (hits[1]?.score || 0)) return unsure((await call('describe_entity', { ref: hits[0].uid })).text);
+    return unsure(`Here's what I found in your graph:\n${hits.map((h: Row) => `- ${h.label} **${h.name}**`).join('\n')}\n\nAsk me about any of them.`);
   }
-  return done(fallback(cards));
+  return unsure(fallback(cards));
 }
 
 /** Nothing matched: say so plainly and offer questions the graph can answer. */

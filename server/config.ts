@@ -24,7 +24,10 @@ export const config = {
     // OpenRouter's free tier works out of the box with a free tool-calling model
     model: env.ZIV_LLM_MODEL || (env.ZIV_LLM_API_KEY ? 'openai/gpt-4o-mini' : 'nvidia/nemotron-3-super-120b-a12b:free'),
     // "off" forces the built-in graph planner even when a key is present.
-    mode: (env.ZIV_LLM || 'auto') as 'auto' | 'off',
+    // 'auto': the graph planner answers what it recognises and the model picks tools for the rest;
+    // 'llm': the model handles every turn; 'off': planner only
+    mode: (env.ZIV_LLM || 'auto') as 'auto' | 'llm' | 'off',
+    daily: Number(env.ZIV_LLM_DAILY || 40),
   },
   proactiveMs: env.ZIV_PROACTIVE_MS === undefined ? 10 * 60_000 : Number(env.ZIV_PROACTIVE_MS),
 };

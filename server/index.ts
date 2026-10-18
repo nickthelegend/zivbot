@@ -23,6 +23,7 @@ import { insights } from './insights.ts';
 import { runAlgorithm, graphSchema, ALGORITHMS } from './algorithms.ts';
 import { RULE_KINDS, listRules, createRule, setRuleActive, evaluateRules } from './rules.ts';
 
+const brainName = () => (!llmEnabled() ? 'graph-planner' : config.llm.mode === 'llm' ? `llm:${config.llm.model}` : `hybrid:${config.llm.model}`);
 const ROOT = process.env.ZIV_ROOT || resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const app = new Hono();
 
@@ -77,7 +78,7 @@ app.use('/api/*', async (c, next) => {
 app.get('/api/health', async (c) => {
   let falkordb = 'down';
   try { await (await falkor()).list(); falkordb = 'up'; } catch { /* down */ }
-  return c.json({ ok: falkordb === 'up', falkordb, hosted: config.hosted, brain: llmEnabled() ? `llm:${config.llm.model}` : 'graph-planner' });
+  return c.json({ ok: falkordb === 'up', falkordb, hosted: config.hosted, brain: brainName() });
 });
 
 app.post('/api/session', async (c) => {
@@ -98,7 +99,7 @@ app.get('/api/state', async (c) => {
     g.one(`MATCH (p:Profile) RETURN p.name AS name`),
     g.q(`MATCH (d:Draft {status:'pending'}) RETURN count(d) AS n`),
   ]);
-  return c.json({ dots, conversations, profile: profile || {}, pendingDrafts: pending[0]?.n || 0, hosted: config.hosted, brain: llmEnabled() ? `llm:${config.llm.model}` : 'graph-planner', presets: DOT_PRESETS, labels: LABEL_META });
+  return c.json({ dots, conversations, profile: profile || {}, pendingDrafts: pending[0]?.n || 0, hosted: config.hosted, brain: brainName(), presets: DOT_PRESETS, labels: LABEL_META });
 });
 
 app.get('/api/events', (c) => {
