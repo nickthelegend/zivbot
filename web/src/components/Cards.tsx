@@ -45,34 +45,39 @@ function OptionsCard({ card, conv, answered, latest }: { card: Extract<Card, { t
   );
 }
 
-/** GrokBot's connector card: big logo, name + verified tick, status, "Add Account" and "Manage". */
+/** Connect your real accounts first (one click each); a sample company is there if you have none handy. */
 function ConnectorsCard() {
   const connectors = useStore((s) => s.connectors);
   const progress = useStore((s) => s.connectorProgress);
   const dots = useStore((s) => s.dots);
+  const hosted = useStore((s) => !!s.hosted);
+  const account = useStore((s) => s.account);
   const demo = connectors.find((c) => c.id === 'demo');
-  const live = connectors.filter((c) => c.status === 'connected' && c.mode === 'live' && !c.id.startsWith('agent-') && c.auth === 'key');
-  const syncing = demo?.status === 'syncing';
-  const connected = demo?.status === 'connected';
+  const google = connectors.find((c) => c.id === 'google');
   const name = dots[0]?.name || 'Ziv';
+  const googleOn = google?.status === 'connected' && google.mode === 'live';
+  const demoOn = demo?.status === 'connected';
+  const signInGoogle = async () => {
+    try {
+      const g = await api.google();
+      if (!g.clientReady) { set({ connectOpen: true }); toast('One-time setup: add your Google OAuth client on the Google Workspace card'); return; }
+      await api.googleSignIn();
+      set((st) => ({ connectorProgress: { ...st.connectorProgress, google: 'Waiting for you in the browser — choose your Google account' } }));
+    } catch (e: any) { toast(e.message); }
+  };
+  const row = (icon: React.ReactNode, title: string, sub: string, action: React.ReactNode) => (
+    <div className="connector-card">{icon}<div className="grow"><div className="row-title">{title}</div><div className="row-sub">{sub}</div></div>{action}</div>
+  );
   return (
     <div className="connector-wrap">
-      <div className="connector-card">
-        <img className="demo-ws-icon" src="/brand/icon-64.png" alt="" width={44} height={44} />
-        <div className="grow">
-          <div className="row-title">Lumen Labs demo workspace <Verified /></div>
-          <div className="row-sub">{connected ? `Connected · synthetic company${live.length ? ` + ${live.length} live app${live.length > 1 ? 's' : ''}` : ''}` : syncing ? progress.demo || 'Connecting…' : 'A synthetic company: mail, calendar, Slack, Notion, Linear and a git repo'}</div>
-        </div>
-        {connected ? (
-          <>
-            <button className="text-btn" onClick={() => set({ connectOpen: true })}>Add Account</button>
-            <button className="btn manage" onClick={() => set({ connectOpen: true })}>Manage</button>
-          </>
-        ) : (
-          <button className="btn manage" disabled={syncing} onClick={() => void api.connect('demo').catch((e) => toast(e.message))}>{syncing ? 'Connecting…' : 'Connect'}</button>
-        )}
-      </div>
-      <div className="fine">{name} always asks before making changes. Disconnect at any time.</div>
+      {!hosted && row(<AppIcon slug="google" size={44} />, 'Google', googleOn ? `Connected · ${google?.counts?.emails ?? ''} emails, ${google?.counts?.events ?? ''} events` : progress.google || 'Your Gmail and Google Calendar',
+        googleOn ? <button className="btn manage" onClick={() => set({ connectOpen: true })}>Manage</button> : <button className="btn add google-btn" onClick={() => void signInGoogle()}><AppIcon slug="google" size={15} /> Sign in with Google</button>)}
+      {!hosted && row(<AppIcon slug="github" size={44} />, 'GitHub', account ? `Signed in as @${account.github} · your repositories` : 'Your repositories, issues and pull requests',
+        account ? <button className="btn manage" onClick={() => set({ connectOpen: true })}>Manage</button> : <button className="btn manage" onClick={() => void api.signIn().then(() => toast('Finish signing in with GitHub in your browser')).catch((e) => toast(e.message))}>Sign in with GitHub</button>)}
+      {(hosted || demoOn || !demo || demo.status !== 'connected') && row(<img className="demo-ws-icon" src="/brand/icon-64.png" alt="" width={44} height={44} />, hosted ? 'Lumen Labs demo workspace' : 'Or try a sample company',
+        demoOn ? 'Connected · synthetic company (Lumen Labs)' : demo?.status === 'syncing' ? progress.demo || 'Connecting…' : hosted ? 'A synthetic company: mail, calendar, Slack, Notion, Linear and a git repo. Your own Google and GitHub connect in the desktop app.' : 'No accounts handy? Lumen Labs is a synthetic company to explore with.',
+        demoOn ? <button className="btn manage" onClick={() => set({ connectOpen: true })}>Manage</button> : <button className="btn manage" disabled={demo?.status === 'syncing'} onClick={() => void api.connect('demo').catch((e) => toast(e.message))}>{demo?.status === 'syncing' ? 'Connecting…' : hosted ? 'Connect' : 'Try it'}</button>)}
+      <div className="fine">{name} always asks before sending, booking or changing anything. Disconnect at any time.</div>
     </div>
   );
 }

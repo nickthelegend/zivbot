@@ -113,6 +113,10 @@ export async function syncMyGithub(userId: string, login: string, token?: string
   await enrich(g);
   await embedPending(g).catch(() => {});
   publish(userId, { type: 'account', status: 'synced', repos: names });
+  const [{ ensureTeam }, { afterConnect }] = await Promise.all([import('./users.ts'), import('./agent.ts')]);
+  await ensureTeam(userId);
+  publish(userId, { type: 'dots' });
+  await afterConnect(userId, { repositories: names.length });
   publish(userId, { type: 'connector', id: 'github', status: 'connected' });
   return names;
 }

@@ -204,6 +204,11 @@ function onEvent(e: any) {
     case 'profile':
       reloadState(50);
       break;
+    case 'google':
+      if (e.status === 'signed-in') { toast(`Google connected: ${e.email} — reading your mail and calendar…`); set((st) => ({ connectorProgress: { ...st.connectorProgress, google: 'Reading your mail…' } })); }
+      else if (e.status === 'synced') { toast(`Mapped ${e.email}'s mail and calendar into your graph`); void loadConnectors(); reloadState(50); }
+      else if (e.status === 'error' || e.status === 'timeout') { toast(e.status === 'timeout' ? 'Google sign-in timed out — try again' : `Google: ${e.error}`); set((st) => ({ connectorProgress: { ...st.connectorProgress, google: '' } })); }
+      break;
     case 'account':
       if (e.status === 'signed-in') { set({ account: e.account }); toast(`Signed in as @${e.account.github} — reading your repositories…`); reloadState(50); }
       else if (e.status === 'synced') { toast(`Mapped ${e.repos.length} of your repositories into your graph`); reloadState(50); void loadConnectors(); }

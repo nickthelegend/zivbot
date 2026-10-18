@@ -58,7 +58,7 @@ async function supabaseTransport(channel: string): Promise<RelayTransport> {
 }
 
 const SKEW_MS = 10 * 60_000;
-const DENY = [/^\/api\/session/, /^\/api\/relay/, /^\/api\/account\/github\/start/];
+const DENY = [/^\/api\/session/, /^\/api\/relay/, /^\/api\/account\/github\/start/, /^\/api\/google\/(client|signin)/];
 
 class Bridge {
   private key: Uint8Array;

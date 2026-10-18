@@ -12,6 +12,7 @@ import { subscribe, publish } from './bus.ts';
 import { ensureUser, ensureTeam, isUser } from './users.ts';
 import { buildMcp } from './mcpServer.ts';
 import { startGithubSignIn, accountOf, signOut } from './account.ts';
+import { googleClient, saveGoogleClient, startGoogleSignIn } from './google-oauth.ts';
 import { enableRelay, relayStatus, resumeRelays, disableRelay } from './relay.ts';
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 import { handleUserMessage, afterConnect } from './agent.ts';
@@ -407,6 +408,21 @@ app.post('/api/account/github/start', async (c) => {
   return c.json(await startGithubSignIn(user(c)));
 });
 app.post('/api/account/signout', async (c) => { await signOut(user(c)); return c.json({ ok: true }); });
+
+// Google: one-click sign-in for the Workspace connector (the OAuth client is set once per computer)
+app.get('/api/google', (c) => { user(c); return c.json({ clientReady: !!googleClient(), hosted: config.hosted }); });
+app.post('/api/google/client', async (c) => {
+  if (config.hosted) throw new HttpError(400, 'Connect Google from the desktop app — your mail stays on your computer.');
+  if (c.req.header('x-ziv-via') === 'relay') throw new HttpError(403, 'set this up on the computer');
+  user(c);
+  const b = await c.req.json();
+  try { saveGoogleClient(String(b.clientId || ''), String(b.clientSecret || '')); } catch (e: any) { throw new HttpError(400, e.message); }
+  return c.json({ ok: true });
+});
+app.post('/api/google/signin', async (c) => {
+  if (config.hosted) throw new HttpError(400, 'Connect Google from the desktop app — your mail stays on your computer.');
+  try { return c.json(await startGoogleSignIn(user(c))); } catch (e: any) { throw new HttpError(e.code === 'NO_CLIENT' ? 409 : 400, e.message); }
+});
 
 app.get('/api/relay', (c) => c.json({ ...relayStatus(user(c)), hosted: config.hosted }));
 app.post('/api/relay/enable', async (c) => {

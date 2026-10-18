@@ -77,6 +77,27 @@ function McpBox() {
   );
 }
 
+/** One-time, per computer: the OAuth client Google requires before any "Sign in with Google". */
+function GoogleSetup({ onDone }: { onDone: () => void }) {
+  const [id, setId] = useState('');
+  const [secret, setSecret] = useState('');
+  const [busy, setBusy] = useState(false);
+  return (
+    <div className="app-config google-setup">
+      <div className="gs-title">One-time setup for Google sign-in</div>
+      <ol>
+        <li>Open <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noreferrer">Google Cloud → Credentials</a> (any project) and enable the <b>Gmail API</b> and <b>Google Calendar API</b>.</li>
+        <li><b>OAuth consent screen</b>: External, name “ZivBot”, add the Google account you'll connect as a <b>test user</b>.</li>
+        <li><b>Create credentials → OAuth client ID → Desktop app</b>. Paste its ID and secret here.</li>
+      </ol>
+      <label><span>Client ID</span><input value={id} onChange={(e) => setId(e.target.value)} placeholder="….apps.googleusercontent.com" /></label>
+      <label><span>Client secret</span><input type="password" value={secret} onChange={(e) => setSecret(e.target.value)} placeholder="GOCSPX-…" /></label>
+      <small>Saved on this computer only. After this, any Google account is one click.</small>
+      <div className="row-end"><button className="btn primary sm" disabled={busy || !id || !secret} onClick={() => { setBusy(true); void api.googleClient(id, secret).then(onDone).catch((e) => toast(e.message)).finally(() => setBusy(false)); }}>{busy ? 'Saving…' : 'Save and sign in'}</button></div>
+    </div>
+  );
+}
+
 function AppRow({ c, open, onToggle }: { c: Connector; open: boolean; onToggle: () => void }) {
   const progress = useStore((s) => s.connectorProgress[c.id]);
   const [values, setValues] = useState<Record<string, string>>({});
@@ -93,6 +114,16 @@ function AppRow({ c, open, onToggle }: { c: Connector; open: boolean; onToggle: 
       await loadConnectors();
     } catch (e: any) { toast(e.data?.missing ? `${c.name} needs: ${e.data.missing.join(', ')}` : e.message); await loadConnectors(); } finally { setBusy(false); }
   };
+  const [setup, setSetup] = useState(false);
+  const googleSignIn = async () => {
+    setBusy(true);
+    try {
+      const g = await api.google();
+      if (!g.clientReady) { setSetup(true); return; }
+      await api.googleSignIn();
+      toast('Choose your Google account in the browser');
+    } catch (e: any) { if (/client/i.test(e.message)) setSetup(true); else toast(e.message); } finally { setBusy(false); }
+  };
   const label = connected ? (isAgent ? 'Ready' : 'Added') : c.status === 'syncing' || busy ? 'Syncing…' : isAgent ? (c.status === 'not installed' ? 'Install' : 'Detect') : c.auth === 'key' ? 'Connect' : 'Add';
   return (
     <div className={`app-row ${open ? 'open' : ''}`}>
@@ -102,7 +133,9 @@ function AppRow({ c, open, onToggle }: { c: Connector; open: boolean; onToggle: 
           <div className="app-name">{c.name}{c.auth === 'demo' && <span className="pill-mini">demo</span>}{c.status === 'demo' && <span className="pill-mini">sample data</span>}{c.auth === 'key' && !connected && <span className="pill-mini key">key</span>}</div>
           <div className="app-desc">{progress && c.status === 'syncing' ? progress : c.error && c.status !== 'connected' ? c.error : connected && c.counts ? Object.entries(c.counts).slice(0, 4).map(([k, v]) => `${v} ${k}`).join(' · ') : c.description}</div>
         </div>
-        {c.status === 'desktop only' ? (
+        {c.id === 'google' && !connected && c.status !== 'desktop only' ? (
+          <button className="btn add google-btn" disabled={busy} onClick={() => void googleSignIn()}><AppIcon slug="google" size={15} /> {busy ? 'Waiting for Google…' : 'Sign in with Google'}</button>
+        ) : c.status === 'desktop only' ? (
           <span className="desktop-only" title="Runs on your own machine">Desktop app</span>
         ) : connected ? (
           <button className="added" onClick={needsInput ? onToggle : undefined}><Icon.check size={14} /> {label}</button>
@@ -110,7 +143,8 @@ function AppRow({ c, open, onToggle }: { c: Connector; open: boolean; onToggle: 
           <button className="btn add" disabled={busy || c.status === 'syncing'} onClick={() => (needsInput && !open ? onToggle() : void go())}>{label}</button>
         )}
       </div>
-      {open && (
+      {setup && <GoogleSetup onDone={() => { setSetup(false); void googleSignIn(); }} />}
+      {open && c.id !== 'google' && (
         <div className="app-config">
           {c.fields.map((f) => (
             <label key={f.key}>
